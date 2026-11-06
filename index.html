@@ -1,0 +1,1670 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Kristen's Escape">
+<meta name="theme-color" content="#120e18">
+<title>Kristen's Great Escape</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#120e18; --ink:#e8e2f0; --btn:#3a3352; --btnHi:#4d4570; --a:#c2405a; --b:#5a4f80; }
+  html, body {
+    margin:0; height:100%; background:var(--bg); color:var(--ink); overflow:hidden;
+    touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;
+    -webkit-tap-highlight-color:transparent; font-family:"Press Start 2P", monospace;
+    overscroll-behavior:none;
+  }
+  #safe { position:absolute; top:0; left:0; width:0; height:0; padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom); padding-left:env(safe-area-inset-left); padding-right:env(safe-area-inset-right); visibility:hidden; }
+  #game {
+    position:absolute; image-rendering:pixelated; image-rendering:crisp-edges; background:#000;
+    border-radius:6px; box-shadow:0 0 0 3px #2a2440, 0 10px 40px #000a;
+  }
+  #hint { position:absolute; left:0; right:0; text-align:center; font-size:10px; color:#8a84a8; line-height:1.8; }
+  body.touch #hint { display:none; }
+  #mute {
+    position:absolute; top:calc(8px + env(safe-area-inset-top)); right:calc(8px + env(safe-area-inset-right));
+    background:var(--btn); color:var(--ink); border:0; border-radius:8px; font:inherit; font-size:10px;
+    padding:8px 10px; cursor:pointer; z-index:5;
+  }
+  #controls { display:none; }
+  body.touch #controls { display:block; }
+  #dpad { position:absolute; width:156px; height:156px; touch-action:none; }
+  #dpad .arm { position:absolute; background:var(--btn); box-shadow:inset 0 -4px 0 #0005; }
+  #dpad .h { left:0; top:52px; width:156px; height:52px; border-radius:10px; }
+  #dpad .v { left:52px; top:0; width:52px; height:156px; border-radius:10px; }
+  #dpad .tri { position:absolute; width:0; height:0; border:9px solid transparent; opacity:.7; }
+  #dpad .tu { left:69px; top:12px; border-bottom:12px solid var(--ink); border-top:0; }
+  #dpad .td { left:69px; bottom:12px; border-top:12px solid var(--ink); border-bottom:0; }
+  #dpad .tl { top:69px; left:12px; border-right:12px solid var(--ink); border-left:0; }
+  #dpad .tr { top:69px; right:12px; border-left:12px solid var(--ink); border-right:0; }
+  #dpad .hub { position:absolute; left:62px; top:62px; width:32px; height:32px; border-radius:50%; background:#2c2640; }
+  #dpad.dir-up .v, #dpad.dir-down .v, #dpad.dir-left .h, #dpad.dir-right .h { background:var(--btnHi); }
+  #ab { position:absolute; width:160px; height:140px; }
+  .btn {
+    position:absolute; width:68px; height:68px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-size:16px; color:#fff; box-shadow:inset 0 -5px 0 #0006, 0 3px 8px #0006; touch-action:none;
+  }
+  #btnA { right:4px; top:4px; background:var(--a); }
+  #btnB { left:4px; bottom:4px; background:var(--b); }
+  .btn.down { transform:translateY(3px); box-shadow:inset 0 -2px 0 #0006; filter:brightness(1.2); }
+</style>
+</head>
+<body>
+<div id="safe"></div>
+<canvas id="game" aria-label="Kristen's Great Escape game screen"></canvas>
+<div id="hint">Arrows / WASD: move &nbsp;·&nbsp; Z / Enter / Space: A (talk, confirm) &nbsp;·&nbsp; X / Esc: B (menu, back)</div>
+<button id="mute" aria-label="Toggle sound">♪ ON</button>
+<div id="controls">
+  <div id="dpad">
+    <div class="arm h"></div><div class="arm v"></div><div class="hub"></div>
+    <div class="tri tu"></div><div class="tri td"></div><div class="tri tl"></div><div class="tri tr"></div>
+  </div>
+  <div id="ab">
+    <div class="btn" id="btnA">A</div>
+    <div class="btn" id="btnB">B</div>
+  </div>
+</div>
+<script>
+'use strict';
+/* =========================================================
+   KRISTEN'S GREAT ESCAPE — an original little castle RPG
+   ========================================================= */
+const W = 240, H = 160, TS = 16, SCALE = 4;
+const cv = document.getElementById('game');
+cv.width = W * SCALE; cv.height = H * SCALE;
+const ctx = cv.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
+const FONT = '"Press Start 2P", monospace';
+const FS = 8, LH = 13;
+
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+};
+const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+/* ================= SOUND ================= */
+const Sound = (() => {
+  let ac = null, master, musicGain, sfxGain, muted = store.get('kge_muted', false);
+  let track = null, trackName = '', step = 0, nextT = 0, timer = null;
+  const mf = n => 440 * Math.pow(2, (n - 69) / 12);
+  const TRACKS = {
+    title: { bpm: 112, mel: [64,0,67,0,72,0,71,0, 69,0,67,0,64,0,0,0, 65,0,69,0,72,0,74,0, 71,0,0,0,67,0,0,0],
+             bass: [48,0,0,0,55,0,0,0, 45,0,0,0,52,0,0,0, 41,0,0,0,48,0,0,0, 43,0,0,0,47,0,0,0] },
+    world: { bpm: 132, mel: [72,0,76,0,79,0,76,77, 79,0,77,76,74,0,0,0, 71,0,74,0,77,0,76,74, 72,0,74,76,72,0,0,0],
+             bass: [48,0,55,0,48,0,55,0, 53,0,60,0,53,0,60,0, 55,0,62,0,55,0,62,0, 48,0,55,0,48,0,52,0] },
+    battle: { bpm: 168, mel: [69,0,69,72,0,69,76,0, 74,72,71,0,72,0,71,67, 69,0,69,72,0,69,77,0, 76,74,72,71,69,0,0,0],
+             bass: [45,45,57,45,45,57,45,57, 41,41,53,41,41,53,41,53, 45,45,57,45,45,57,45,57, 40,40,52,40,44,44,56,44] },
+    ending: { bpm: 120, mel: [72,76,79,84,0,79,84,0, 81,0,79,0,77,76,77,79, 76,0,72,0,74,0,71,0, 72,0,0,0,0,0,0,0],
+             bass: [48,0,55,0,48,0,55,0, 53,0,57,0,53,0,57,0, 55,0,59,0,55,0,59,0, 48,0,55,0,48,0,0,0] },
+  };
+  function unlock() {
+    if (!ac) {
+      try {
+        ac = new (window.AudioContext || window.webkitAudioContext)();
+        master = ac.createGain(); master.gain.value = muted ? 0 : 1; master.connect(ac.destination);
+        musicGain = ac.createGain(); musicGain.gain.value = 0.09; musicGain.connect(master);
+        sfxGain = ac.createGain(); sfxGain.gain.value = 0.22; sfxGain.connect(master);
+        const b = ac.createBuffer(1, 1, 22050), s = ac.createBufferSource(); s.buffer = b; s.connect(ac.destination); s.start(0);
+      } catch (e) { ac = null; return; }
+    }
+    if (ac.state === 'suspended') ac.resume();
+    if (track && !timer) startSeq();
+  }
+  function tone(freq, t, dur, type, vol, dest, slideTo) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(dest); o.start(t); o.stop(t + dur + 0.03);
+  }
+  function sfx(name) {
+    if (!ac || muted) return;
+    const t = ac.currentTime, d = sfxGain;
+    switch (name) {
+      case 'blip': tone(1046, t, 0.025, 'square', 0.12, d); break;
+      case 'move': tone(784, t, 0.04, 'square', 0.25, d); break;
+      case 'select': tone(784, t, 0.05, 'square', 0.3, d); tone(1175, t + 0.05, 0.08, 'square', 0.3, d); break;
+      case 'bump': tone(110, t, 0.07, 'square', 0.3, d); break;
+      case 'door': tone(196, t, 0.12, 'triangle', 0.6, d, 98); break;
+      case 'hit': tone(420, t, 0.16, 'sawtooth', 0.5, d, 60); tone(90, t, 0.12, 'square', 0.4, d); break;
+      case 'hurt': tone(300, t, 0.2, 'square', 0.45, d, 80); break;
+      case 'miss': tone(600, t, 0.1, 'triangle', 0.4, d, 300); break;
+      case 'heal': [523, 659, 784, 1046].forEach((f, i) => tone(f, t + i * 0.07, 0.12, 'triangle', 0.5, d)); break;
+      case 'item': [659, 784, 988, 1319].forEach((f, i) => tone(f, t + i * 0.06, 0.1, 'square', 0.25, d)); break;
+      case 'down': tone(500, t, 0.25, 'square', 0.35, d, 120); break;
+      case 'encounter': for (let i = 0; i < 6; i++) tone(1200 - i * 150, t + i * 0.05, 0.05, 'square', 0.3, d); break;
+      case 'win': [523, 659, 784, 659, 784, 1046].forEach((f, i) => tone(f, t + i * 0.09, 0.14, 'square', 0.3, d)); break;
+      case 'faint': [392, 330, 262, 196].forEach((f, i) => tone(f, t + i * 0.15, 0.2, 'triangle', 0.5, d)); break;
+    }
+  }
+  function startSeq() {
+    if (!ac || !track) return;
+    nextT = ac.currentTime + 0.05;
+    clearInterval(timer);
+    timer = setInterval(() => {
+      if (!ac || !track) return;
+      const stepDur = 60 / track.bpm / 2;
+      while (nextT < ac.currentTime + 0.12) {
+        const m = track.mel[step % track.mel.length], b = track.bass[step % track.bass.length];
+        if (m) tone(mf(m), nextT, stepDur * 0.9, 'square', 0.45, musicGain);
+        if (b) tone(mf(b), nextT, stepDur * 0.95, 'triangle', 0.8, musicGain);
+        step++; nextT += stepDur;
+      }
+    }, 25);
+  }
+  function music(name) {
+    if (name === trackName) return;
+    trackName = name; track = TRACKS[name] || null; step = 0;
+    clearInterval(timer); timer = null;
+    if (track && ac) startSeq();
+  }
+  function setMuted(m) { muted = m; store.set('kge_muted', m); if (master) master.gain.value = m ? 0 : 1; }
+  document.addEventListener('visibilitychange', () => { if (!ac) return; if (document.hidden) ac.suspend(); else ac.resume(); });
+  return { unlock, sfx, music, setMuted, get muted() { return muted; } };
+})();
+
+/* ================= SPRITES ================= */
+const PAL = {
+  k:'#1b1424', h:'#2a1a16', H:'#5a3a2c', s:'#f9e0cf', S:'#e8b9a3', p:'#f2a0a8', m:'#c4495e',
+  r:'#8a3fa0', R:'#5c2a70', b:'#3b2b2b', w:'#ffffff', g:'#6cb04a', G:'#3f7a2e', y:'#f2d04b',
+  o:'#e8833a', O:'#a8501c', x:'#9aa3b0', X:'#5f6773', z:'#d6dbe3', c:'#7cc8e8', C:'#3f7fb8',
+  n:'#8a6440', N:'#5c4128', v:'#d03a3a', V:'#7a1f2a', u:'#eee6d4', U:'#b8ae96', l:'#e8f4fa',
+  L:'#d8e2cf', a:'#d99a5a', f:'#2c2840'
+};
+function canvasOf(w, h, fn) { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); fn(g); return c; }
+function mkSprite(rows) {
+  return canvasOf(16, 16, g => rows.forEach((r, y) => { for (let x = 0; x < 16; x++) { const ch = r[x]; if (ch && PAL[ch]) { g.fillStyle = PAL[ch]; g.fillRect(x, y, 1, 1); } } }));
+}
+function flipC(c) { return canvasOf(c.width, c.height, g => { g.translate(c.width, 0); g.scale(-1, 1); g.drawImage(c, 0, 0); }); }
+const SPR = {};
+function addSprite(name, rows) { const c = mkSprite(rows); SPR[name] = { n: c, f: flipC(c) }; }
+function addCanvasSprite(name, c) { SPR[name] = { n: c, f: flipC(c) }; }
+
+// --- Kristen: dark hair, fair skin, purple dress ---
+const K_DOWN = [
+  "................",
+  ".....kkkkkk.....",
+  "....khhhhhhk....",
+  "...khhHHhhhhk...",
+  "...khhhhhhhhk...",
+  "..khhsssssshhk..",
+  "..khhsksskshhk..",
+  "..khhpssssphhk..",
+  "..khhhsmmshhhk..",
+  "..khhhkrrkhhhk..",
+  "..khhrrrrrrhhk..",
+  "...ksrrrrrrsk...",
+  "....kRrrrrRk....",
+  "....kRRRRRRk....",
+];
+const K_UP = [
+  "................",
+  ".....kkkkkk.....",
+  "....khhhhhhk....",
+  "...khhhhHHhhk...",
+  "...khhhhhhhhk...",
+  "..khhhhhhhhhhk..",
+  "..khhhhhhhhhhk..",
+  "..khhhhHhhhhhk..",
+  "..khhhhhhhhhhk..",
+  "..khhhhhhhhhhk..",
+  "..kkhhhhhhhhkk..",
+  "...ksRhhhhRsk...",
+  "....kRrhhrRk....",
+  "....kRRRRRRk....",
+];
+const K_SIDE = [
+  "................",
+  ".....kkkkkk.....",
+  "....khhhhhhk....",
+  "...khhHHhhhhk...",
+  "...khhhhhhhhk...",
+  "...khhhhhssssk..",
+  "...khhhhhssksk..",
+  "...khhhhhsssssk.",
+  "...khhhhhhssmk..",
+  "...khhhhhhkrk...",
+  "...khhhhrrrrk...",
+  "....khhrrrrsk...",
+  "....kRrrrrRk....",
+  "....kRRRRRRk....",
+];
+const LEGS_F = [
+  [".....kbkkbk.....", ".....kk..kk....."],
+  ["....kbk..kbk....", "....kk.....k...."],
+  ["....kbk..kbk....", "....k.....kk...."],
+];
+const LEGS_S = [
+  [".....kbbbk......", ".....kk.kk......"],
+  ["....kbk.kbk.....", "....kk...kk....."],
+  [".....kbbbk......", "......kkk......."],
+];
+for (let f = 0; f < 3; f++) {
+  addSprite('k_down_' + f, K_DOWN.concat(LEGS_F[f]));
+  addSprite('k_up_' + f, K_UP.concat(LEGS_F[f]));
+  addSprite('k_side_' + f, K_SIDE.concat(LEGS_S[f]));
+}
+
+addSprite('gobbo', [
+  "................",
+  ".....kkkkkk.....",
+  "kk..kggggggk..kk",
+  "kgkkggggggggkkgk",
+  ".kgggykggykgggk.",
+  "..kggggggggggk..",
+  "...kggwkkwggk...",
+  "....kkggggkk....",
+  "...knnnnnnnnk...",
+  "..kgknnnnnnkgk..",
+  "..kgknNnnNnkgk..",
+  "...kknnnnnnkk...",
+  "....knNNNNnk....",
+  "....kGGkkGGk....",
+  "....kGGk.kGGk...",
+  "....kkkk.kkkk...",
+]);
+addSprite('dustbunny', [
+  "...kk....kk.....",
+  "..kuuk..kuuk....",
+  "..kupk..kupk....",
+  "..kuuk..kuuk....",
+  "...kuukkuuk.....",
+  "..kuuuuuuuuk....",
+  ".kuuuuuuuuuuk...",
+  "kuuukuuuukuuuk..",
+  "kuuukuuuukuuuk..",
+  "kuuuuuppuuuuuk..",
+  "kuuuuuuuuuuuuk..",
+  ".kuuuUuuUuuuk...",
+  ".kUuuuUUuuuUk...",
+  "..kUUuuuuUUk....",
+  "...kkkkkkkk.....",
+  "................",
+]);
+addSprite('bat', [
+  "................",
+  "................",
+  "......k..k......",
+  ".....kRkkRk.....",
+  "k...kRRRRRRk...k",
+  "kk..kRwRRwRk..kk",
+  "kRk.kRkRRkRk.kRk",
+  "kRRkkRRRRRRkkRRk",
+  "kRRRRRRwwRRRRRRk",
+  "kRRRRRRRRRRRRRRk",
+  ".kRRkRRRRRRkRRk.",
+  "..kk.kRRRRk.kk..",
+  "......kRRk......",
+  ".......kk.......",
+  "................",
+  "................",
+]);
+addSprite('teapot', [
+  "................",
+  ".......kk.......",
+  "......kCCk......",
+  "....kkkkkkkk....",
+  "...kCCCCCCCCk...",
+  "..kCCwkCCwkCCk..",
+  "kkkCCwkCCwkCCkkk",
+  "kC.kCCCCCCCCk.Ck",
+  "kC.kCCkkkkCCk.Ck",
+  ".kCkCCCvvCCCkCk.",
+  "..kkCCCCCCCCkk..",
+  "...kCCCCCCCCk...",
+  "...kClClClClk...",
+  "....kCCCCCCk....",
+  ".....kkkkkk.....",
+  "................",
+]);
+addSprite('clanks', [
+  ".......vv.......",
+  "......vvvv......",
+  ".....kkvvkk.....",
+  "....kzzzzzzk....",
+  "....kzxxxxzk....",
+  "....kxkkkkxk....",
+  "....kzxxxxzk....",
+  "..kkkkzzzzkkkk..",
+  ".kzzxkxxxxkxzzk.",
+  ".kzxxkzzzzkxxzk.",
+  ".kxk.kxyyxk.kxk.",
+  ".kzk.kxxxxk.kzk.",
+  ".kkk.kxXXxk.kkk.",
+  ".....kxkkxk.....",
+  "....kzxk.kxzk...",
+  "....kkkk.kkkk...",
+]);
+addSprite('soup', [
+  "................",
+  "....w...w..w....",
+  "...l.l.l.l.l....",
+  "..kkkkkkkkkkkk..",
+  ".kaaaoaaaaoaaak.",
+  ".kakkaaaaakkaak.",
+  ".kaaaaaaaaaaaak.",
+  ".kaaavvvvvvaaak.",
+  "kkkkkkkkkkkkkkkk",
+  "kwwzwwwwwwwwzwwk",
+  ".kwwwwwwwwwwwwk.",
+  "..kwwwzwwzwwwk..",
+  "...kwwwwwwwwk...",
+  "....kkkkkkkk....",
+  ".....kzzzzk.....",
+  ".....kkkkkk.....",
+]);
+addSprite('smudge', [
+  "................",
+  "..kk............",
+  ".kook.kk........",
+  ".kooookOk.......",
+  "koowkooOk.......",
+  "kooooooook......",
+  "kyyoooooooOk....",
+  ".kkyyooooOOOk...",
+  "...kooyyooooOk..",
+  "..kOkoyyooooOk.k",
+  ".kOOkoyyoooOk.ko",
+  ".kOkkoyyoooOkkok",
+  "..k.koooooOOook.",
+  "....kokkkokkkk..",
+  "....kk...kk.....",
+  "................",
+]);
+addSprite('baron', [
+  "................",
+  "....kkkkkkkk....",
+  "...kkkkkkkkkk...",
+  "...kkkLkkLkkk...",
+  "...kkLLLLLLkk...",
+  "...kLvLLLLvLk...",
+  "...kLLLLLLyyk...",
+  ".VVkLLkkkkLLkVV.",
+  "VVfkkLwLLwLkkfVV",
+  "VfffkwwwwwwkfffV",
+  "VfffkwvvvvwkfffV",
+  "VffffkwvvwkffffV",
+  ".VffffkffkffffV.",
+  ".VfffffkkfffffV.",
+  "..VfffkkkkfffV..",
+  "..VVkkk..kkkVV..",
+]);
+addSprite('chef', [
+  "....kkkkkkkk....",
+  "...kwwwwwwwwk...",
+  "...kwwwwwwwwk...",
+  "....kwwwwwwk....",
+  "...kggggggggk...",
+  "..kggkggggkggk..",
+  "..kgggggggggggk.",
+  "..kgggwgggwgggk.",
+  "...kgggkkkgggk..",
+  "..kwwwwwwwwwwwk.",
+  ".kgkwwwwwwwwwkgk",
+  ".kgkwwwwnwwwwkgk",
+  "..kkwwwwwwwwwkk.",
+  "...knnnnnnnnnk..",
+  "...kGGGk.kGGGk..",
+  "...kkkkk.kkkkk..",
+]);
+addSprite('ghost', [
+  "................",
+  ".....kkkkkk.....",
+  "....kllllllk....",
+  "...kllllllllk...",
+  "...klkkllkklk...",
+  "...kllllllyyk...",
+  "...klllkklllk...",
+  "...kllllllllk...",
+  "..kllkvvvvkllk..",
+  "..kllllvvllllk..",
+  ".kllllllllllllk.",
+  ".kllllllllllllk.",
+  "kllllllllllllllk",
+  "kllkllkllkllkllk",
+  ".kk.kk.kk.kk.kk.",
+  "................",
+]);
+function chestCanvas(open) {
+  return canvasOf(16, 16, g => {
+    const R = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
+    R(1, 5, 14, 10, '#1b1424');
+    if (open) { R(2, 2, 12, 4, '#1b1424'); R(3, 3, 10, 2, '#5c4128'); R(2, 6, 12, 3, '#2a1a10'); }
+    else { R(2, 4, 12, 4, '#a8743e'); R(1, 4, 14, 1, '#1b1424'); }
+    R(2, 8, 12, 6, '#8a5a32'); R(2, 8, 12, 1, '#a8743e');
+    R(2, 11, 12, 1, '#5c4128');
+    R(7, 7, 2, 3, '#f2d04b'); R(7, 9, 2, 1, '#1b1424');
+  });
+}
+addCanvasSprite('chest', chestCanvas(false));
+addCanvasSprite('chest_open', chestCanvas(true));
+
+/* ================= TILES ================= */
+const TILES = {};
+function disc(g, cx, cy, r, c) { g.fillStyle = c; for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) if (x * x + y * y <= r * r + r * 0.6) g.fillRect(cx + x, cy + y, 1, 1); }
+function makeTiles() {
+  const tile = (name, fn, frames = 1) => { TILES[name] = []; for (let f = 0; f < frames; f++) TILES[name].push(canvasOf(16, 16, g => fn(g, f))); };
+  const R = (g, x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
+  const floor = g => { R(g, 0, 0, 16, 16, '#5e5870'); R(g, 0, 0, 16, 1, '#4f4a60'); R(g, 0, 0, 1, 8, '#4f4a60'); R(g, 0, 8, 16, 1, '#4f4a60'); R(g, 8, 8, 1, 8, '#4f4a60'); R(g, 3, 4, 1, 1, '#6d6782'); R(g, 12, 3, 1, 1, '#6d6782'); R(g, 5, 12, 1, 1, '#6d6782'); R(g, 13, 13, 1, 1, '#6d6782'); };
+  const wall = g => { R(g, 0, 0, 16, 16, '#2e2a3d'); for (let row = 0; row < 4; row++) { const off = row % 2 ? 4 : 0; for (let bx = -off; bx < 16; bx += 8) { R(g, bx + 1, row * 4 + 1, 6, 3, '#4a4560'); R(g, bx + 1, row * 4 + 1, 6, 1, '#5a5474'); } } R(g, 0, 15, 16, 1, '#1e1a28'); };
+  const lawn = g => { R(g, 0, 0, 16, 16, '#6aa84f'); [[2, 3], [9, 1], [13, 7], [5, 10], [11, 13], [1, 14]].forEach(([x, y]) => { R(g, x, y, 1, 2, '#7cbc5f'); R(g, x + 1, y + 1, 1, 1, '#5a983f'); }); };
+  tile('floor', floor);
+  tile('wall', wall);
+  tile('lawn', lawn);
+  tile('void', g => R(g, 0, 0, 16, 16, '#000'));
+  tile('torch', (g, f) => { wall(g); R(g, 6, 8, 4, 2, '#5c4128'); R(g, 7, 10, 2, 3, '#5c4128'); R(g, 6, 3 + f, 4, 5 - f, '#e8833a'); R(g, 7, 4 + f, 2, 3 - f, '#f2d04b'); R(g, 7, 2 + f * 2, 1, 1, '#f2d04b'); }, 2);
+  tile('window', (g, f) => { wall(g); R(g, 4, 3, 8, 11, '#1b1424'); R(g, 5, 4, 6, 9, '#24315e'); R(g, 4, 3, 1, 1, '#2e2a3d'); R(g, 11, 3, 1, 1, '#2e2a3d'); R(g, 7, 4, 2, 9, '#1b1424'); R(g, 5, 8, 6, 1, '#1b1424'); R(g, f ? 6 : 9, 5, 1, 1, '#f2d04b'); R(g, 4, 13, 8, 1, '#8c8698'); });
+  const portrait = (g, stache) => { wall(g); R(g, 2, 2, 12, 12, '#c9a13b'); R(g, 3, 3, 10, 10, '#3a2a4a'); disc(g, 8, 8, 3, '#d8e2cf'); R(g, 5, 4, 6, 2, '#1b1424'); R(g, 6, 8, 1, 1, '#d03a3a'); R(g, 9, 8, 1, 1, '#d03a3a'); R(g, 4, 11, 8, 2, '#2c2840'); if (stache) { R(g, 5, 10, 6, 1, '#1b1424'); R(g, 4, 9, 1, 1, '#1b1424'); R(g, 11, 9, 1, 1, '#1b1424'); } };
+  tile('portrait', g => portrait(g, false));
+  tile('portrait2', g => portrait(g, true));
+  tile('stairs', g => { R(g, 0, 0, 16, 16, '#2e2a3d'); for (let i = 0; i < 4; i++) { const c = ['#3d3850', '#4f4a64', '#625c78', '#76708c'][i]; R(g, 1, 1 + i * 4, 14, 4, c); R(g, 1, 1 + i * 4, 14, 1, '#8c86a2'); } });
+  tile('door', g => { wall(g); R(g, 2, 1, 12, 15, '#1b1424'); R(g, 3, 2, 10, 14, '#6b4426'); for (let x = 5; x < 13; x += 3) R(g, x, 2, 1, 14, '#4f311a'); R(g, 3, 5, 10, 1, '#2a2a2a'); R(g, 3, 11, 10, 1, '#2a2a2a'); R(g, 11, 8, 1, 2, '#f2d04b'); });
+  tile('doorway', g => { wall(g); R(g, 2, 1, 12, 15, '#120e18'); R(g, 3, 9, 10, 7, '#1e1a28'); R(g, 2, 1, 12, 1, '#5a5474'); });
+  tile('gate', g => { wall(g); R(g, 1, 1, 14, 15, '#120e18'); for (let x = 2; x < 15; x += 3) R(g, x, 1, 1, 15, '#7a7f8a'); R(g, 1, 5, 14, 1, '#7a7f8a'); R(g, 1, 11, 14, 1, '#7a7f8a'); R(g, 6, 7, 4, 4, '#c9a13b'); R(g, 7, 8, 2, 1, '#1b1424'); });
+  tile('bed', g => { floor(g); R(g, 1, 0, 14, 16, '#4f311a'); R(g, 2, 1, 12, 14, '#e8e8f0'); R(g, 3, 2, 10, 4, '#ffffff'); R(g, 3, 5, 10, 1, '#c8c8d8'); R(g, 2, 7, 12, 8, '#8a3fa0'); R(g, 2, 9, 12, 1, '#a85cc0'); R(g, 2, 12, 12, 1, '#5c2a70'); });
+  tile('table', g => { floor(g); R(g, 2, 11, 2, 4, '#4f311a'); R(g, 12, 11, 2, 4, '#4f311a'); R(g, 1, 3, 14, 9, '#4f311a'); R(g, 1, 3, 14, 7, '#a06a3e'); R(g, 1, 3, 14, 1, '#c08850'); R(g, 4, 5, 6, 4, '#f0e8d0'); R(g, 5, 6, 4, 1, '#8a84a8'); R(g, 11, 4, 2, 4, '#e8e2d0'); R(g, 11, 3, 2, 1, '#f2d04b'); });
+  tile('shelf', g => { R(g, 0, 0, 16, 16, '#5c3a20'); const cols = ['#c23b3b', '#3f7fb8', '#f2d04b', '#6cb04a', '#8a3fa0', '#e8833a']; for (let s = 0; s < 3; s++) { let x = 1; let i = s * 2; while (x < 15) { const w = 1 + ((x * 7 + s * 3) % 2); R(g, x, s * 5 + 1, w, 4, cols[i++ % cols.length]); x += w + ((x + s) % 3 === 0 ? 1 : 0); } R(g, 0, s * 5 + 5, 16, 1, '#3d2614'); } });
+  tile('barrel', g => { floor(g); disc(g, 8, 13, 5, '#2a222e'); R(g, 3, 3, 10, 11, '#8a5a32'); R(g, 2, 5, 12, 7, '#8a5a32'); R(g, 4, 3, 2, 11, '#a8743e'); R(g, 2, 5, 12, 1, '#3a3a3a'); R(g, 2, 10, 12, 1, '#3a3a3a'); R(g, 4, 2, 8, 1, '#5c4128'); });
+  tile('pillar', g => { floor(g); R(g, 3, 0, 10, 16, '#8c8698'); R(g, 3, 0, 3, 16, '#a8a2b5'); R(g, 11, 0, 2, 16, '#6c667a'); R(g, 2, 12, 12, 4, '#6c667a'); R(g, 2, 12, 12, 1, '#a8a2b5'); R(g, 2, 0, 12, 2, '#6c667a'); });
+  const carpet = g => { R(g, 0, 0, 16, 16, '#8f1f2e'); R(g, 0, 0, 2, 16, '#d9a441'); R(g, 14, 0, 2, 16, '#d9a441'); R(g, 7, 2, 2, 2, '#b8344a'); R(g, 6, 3, 4, 1, '#b8344a'); R(g, 7, 10, 2, 2, '#b8344a'); R(g, 6, 11, 4, 1, '#b8344a'); };
+  tile('carpet', carpet);
+  tile('rug', g => { R(g, 0, 0, 16, 16, '#743058'); R(g, 4, 4, 8, 8, '#94406e'); R(g, 6, 6, 4, 4, '#743058'); R(g, 7, 7, 2, 2, '#d9a441'); R(g, 0, 0, 1, 1, '#d9a441'); R(g, 15, 15, 1, 1, '#d9a441'); R(g, 15, 0, 1, 1, '#d9a441'); R(g, 0, 15, 1, 1, '#d9a441'); });
+  tile('throne', g => { carpet(g); R(g, 3, 0, 10, 12, '#c9a13b'); R(g, 5, 2, 6, 8, '#a01e2e'); R(g, 2, 9, 12, 4, '#c9a13b'); R(g, 3, 9, 10, 2, '#b8344a'); R(g, 3, 13, 2, 3, '#8a6a20'); R(g, 11, 13, 2, 3, '#8a6a20'); R(g, 7, 0, 2, 1, '#f2d04b'); });
+  tile('counter', g => { floor(g); R(g, 0, 2, 16, 14, '#5c3a20'); R(g, 0, 2, 16, 5, '#b08050'); R(g, 0, 2, 16, 1, '#c8a070'); disc(g, 4, 4, 2, '#e8e2d0'); R(g, 9, 3, 4, 2, '#6cb04a'); R(g, 13, 2, 2, 3, '#d03a3a'); });
+  tile('cauldron', (g, f) => { floor(g); R(g, 3, 13, 10, 3, '#e8833a'); R(g, 5 + f, 12, 2, 2, '#f2d04b'); R(g, 2, 4, 12, 10, '#2a2a30'); R(g, 1, 4, 14, 2, '#44444c'); R(g, 3, 4, 10, 2, '#c8a870'); R(g, 4 + f * 4, 3, 2, 2, '#d8c090'); R(g, 4, 7, 2, 2, '#44444c'); });
+  tile('grass', (g, f) => { R(g, 0, 0, 16, 16, '#4f8a3b'); for (let i = 0; i < 6; i++) { const x = (i * 5 + 1) % 15, y = (i * 7 + 2) % 12; R(g, x, y + 2, 1, 4, '#3b6e2c'); R(g, x + 1, y + (f ? 0 : 1), 1, 5, '#3b6e2c'); R(g, x + 2, y + 3, 1, 3, '#6aaa4f'); } });
+  tile('path', g => { R(g, 0, 0, 16, 16, '#b09060'); [[3, 3], [10, 5], [6, 11], [13, 12], [1, 8]].forEach(([x, y]) => R(g, x, y, 2, 1, '#9a7a50')); R(g, 8, 1, 1, 1, '#c8a878'); });
+  tile('tree', g => { lawn(g); R(g, 6, 11, 4, 5, '#5c4128'); disc(g, 8, 7, 6, '#2f6b2a'); disc(g, 6, 5, 3, '#3f8a36'); R(g, 5, 4, 1, 1, '#5aa84a'); });
+  tile('flowers', g => { lawn(g); [[3, 4, '#d03a3a'], [10, 3, '#f2d04b'], [6, 9, '#ffffff'], [12, 11, '#f2a0c3'], [2, 12, '#f2d04b']].forEach(([x, y, c]) => { g.fillStyle = c; g.fillRect(x - 1, y, 3, 1); g.fillRect(x, y - 1, 1, 3); g.fillStyle = '#f2d04b'; g.fillRect(x, y, 1, 1); }); });
+  tile('water', (g, f) => { R(g, 0, 0, 16, 16, '#3a6ab8'); for (let y = 2; y < 16; y += 5) { R(g, (f * 4 + y) % 12, y, 4, 1, '#6aa0e8'); R(g, (f * 4 + y + 7) % 14, y + 2, 3, 1, '#5590d8'); } });
+  tile('hay', g => { lawn(g); R(g, 1, 6, 14, 7, '#6b4426'); R(g, 1, 6, 14, 1, '#8a5a32'); disc(g, 8, 6, 5, '#e8c84a'); R(g, 4, 3, 1, 3, '#c9a13b'); R(g, 9, 2, 1, 3, '#c9a13b'); R(g, 12, 4, 1, 2, '#c9a13b'); disc(g, 4, 13, 2, '#2a222e'); disc(g, 12, 13, 2, '#2a222e'); R(g, 4, 13, 1, 1, '#8a8a8a'); R(g, 12, 13, 1, 1, '#8a8a8a'); });
+}
+makeTiles();
+
+const SOLID = new Set(['#', '=', 'W', 'F', 'D', 'G', 'B', 'T', 'L', 'o', 'P', 'K', 'k', 'c', 't', 'w', 'h', ' ']);
+const ENCOUNTER_TILES = new Set([',', 'g']);
+function tileName(ch, outdoor, mapId, x, y) {
+  switch (ch) {
+    case '#': return 'wall'; case '=': return 'torch'; case 'W': return 'window';
+    case 'F': return gs.flags.moustache ? 'portrait2' : 'portrait';
+    case 'S': return 'stairs'; case 'D': return (mapId === 'cell' && gs.flags.cellOpen) ? 'doorway' : 'door';
+    case 'd': return 'doorway'; case 'G': return 'gate'; case 'B': return 'bed'; case 'T': return 'table';
+    case 'L': return 'shelf'; case 'o': return 'barrel'; case 'P': return 'pillar'; case '_': return 'carpet';
+    case ',': return 'rug'; case 'K': return 'throne'; case 'k': return 'counter'; case 'c': return 'cauldron';
+    case 'g': return 'grass'; case ':': return 'path'; case 't': return 'tree'; case 'f': return 'flowers';
+    case 'w': return 'water'; case 'h': return 'hay'; case '.': return outdoor ? 'lawn' : 'floor';
+    default: return 'void';
+  }
+}
+
+/* ================= GAME STATE ================= */
+const gs = {
+  mode: 'title', map: null, mapId: '', time: 0, busy: false,
+  p: { x: 0, y: 0, tx: 0, ty: 0, t: 0, dir: 'down', moving: false, steps: 0 },
+  flags: {}, hp: 30, maxHp: 30, atk: 4, biscuits: 1, wins: 0,
+  fade: 1, fadeTarget: 0, fadeSpeed: 4, fadeRes: null,
+  checkpoint: null, stepsSinceEnc: 0, waiters: [], shake: 0, endingId: null, bumpCd: 0
+};
+const ui = { dialog: null, menu: null, waitA: null };
+let B = null; // battle state
+
+/* ================= ENDINGS ================= */
+const ENDINGS = {
+  sheets: { n: 1, title: 'SHEET HAPPENS', bg: '#1d2a4a', text: [
+    'Kristen knots the bedsheets into a magnificent rope and climbs out of the window.',
+    'The rope is exactly one floor too short.',
+    "She dangles outside the window of the Baron's private bathroom. The Baron is in a bubble bath. With a rubber duck. Wearing a shower cap.",
+    'They stare at each other for a very, very long time.',
+    'He lets her out the front door on one condition: she must NEVER speak of the duck.',
+    'She has told everyone.' ] },
+  chef: { n: 2, title: 'HEAD CHEF KRISTEN', bg: '#4a2a1a', text: [
+    'The Sock Soup is a triumph. At dinner, the Baron weeps into his bowl.',
+    "Within a week, 'Chez Kristen' earns three golden ladles from the Monster Dining Guide.",
+    "She never escapes the castle. She doesn't want to. She has a very tall hat now.",
+    'Nobody ever finds out about the sock. The recipe is a closely guarded secret.' ] },
+  dragon: { n: 3, title: 'SMUDGE MOVES IN', bg: '#1b2550', text: [
+    'Smudge the dragon flies Kristen over the castle walls, across the hills, and all the way home.',
+    'Smudge then refuses to leave.',
+    'Smudge now lives in her flat, eats all of her biscuits, and sets off the smoke alarm twice a day.',
+    'Her landlord thinks Smudge is a very large cat. Nobody corrects him.' ] },
+  hay: { n: 4, title: 'QUEEN OF THE HAY', bg: '#3a5a2a', text: [
+    'Kristen dives into the hay. The donkey wakes up, shrugs, and trundles out of the side gate.',
+    'Two hours later, the cart rolls into the middle of the Lower Puddleton Harvest Festival.',
+    'Kristen emerges, covered head to toe in straw. The judges gasp.',
+    'She wins first prize in the scarecrow contest: a sash, a rosette, and a lifetime supply of turnips.' ] },
+  taxes: { n: 5, title: 'CHIEF FINANCIAL OVERLORD', bg: '#2a3a2a', text: [
+    "Kristen does the Baron's taxes. It takes four hours and a lot of sighing.",
+    'It turns out he is owed 3,000,000 gold coins in refunds. Moats are tax deductible!',
+    'The overjoyed Baron makes her his business partner on the spot.',
+    'She now runs Grumblewick Holdings Ltd. All the monsters get dental insurance and a pension.' ] },
+  queen: { n: 6, title: 'QUEEN KRISTEN THE FIRST', bg: '#4a1a2a', text: [
+    'Kristen sits on the throne. It is extremely comfy.',
+    "The monsters shrug and start calling her 'Your Majesty'.",
+    'Her first royal decree: mandatory biscuit breaks, every hour, on the hour.',
+    'Her approval rating is 100%. The Baron is now the royal accountant, and does his own taxes.' ] },
+  home: { n: 7, title: 'HOME SWEET HOME?', bg: '#1a2a3a', text: [
+    'Kristen takes the Gate Key, strolls out of the front gate, and walks all the way home.',
+    'She makes a nice cup of tea, flops onto the sofa, and sighs with deep relief.',
+    'A letter drops through the letterbox:',
+    "'Dear Kristen, you have been selected for Castle Grumblewick jury duty. Report on Monday. Bring biscuits.'" ] },
+  intern: { n: 8, title: 'ETERNAL INTERN', bg: '#2a2a2a', text: [
+    'Kristen is defeated, and handed a stack of paperwork taller than the tower.',
+    "Thirty-seven years later, she is still the Baron's unpaid intern.",
+    "She has a mug that says WORLD'S OKAYEST PRISONER.",
+    'She has become frighteningly good at spreadsheets.' ] },
+};
+const ENDING_ORDER = ['sheets', 'chef', 'dragon', 'hay', 'taxes', 'queen', 'home', 'intern'];
+let foundEndings = store.get('kge_endings', []);
+if (!Array.isArray(foundEndings)) foundEndings = [];
+
+/* ================= ENEMIES ================= */
+const MOVES = [
+  { name: 'Hair Whip', power: 3, acc: 95, text: 'Kristen whips her glossy dark hair!' },
+  { name: 'Heel Stomp', power: 7, acc: 70, text: 'Kristen stomps down with her heel!' },
+  { name: 'Death Stare', glare: true, acc: 100, text: 'Kristen gives a withering death stare...' },
+  { name: 'Sarcasm', power: 2, acc: 90, sarc: true, text: '' },
+];
+const SARCASM = ['"Oh WOW. Terrifying. Truly."', '"Did you get dressed in the dark?"', '"Is that your scary face? Cute."', '"Wow, so brave. Much monster."', '"I\'ve seen scarier sandwiches."'];
+const ENEMIES = {
+  gobbo: { name: 'GOBBO', sprite: 'gobbo', hp: 16, atk: 2, sarc: 1.2, intro: 'GOBBO the goblin guard wants to fight!',
+    moves: [{ p: 3, t: 'GOBBO pokes you with his spear!' }, { p: 0, t: 'GOBBO picks his nose. It is a deep, thorough excavation.' }, { p: 2, t: 'GOBBO blows a raspberry! It is surprisingly wet.' }],
+    talk: ['"Can we talk about this?"\nGOBBO: "NO!"', 'GOBBO: "...Maybe after lunch."', 'GOBBO: "Lunch is in four hours. FIGHT!"'] },
+  dustbunny: { name: 'DUST BUNNY', sprite: 'dustbunny', hp: 12, atk: 1, sarc: 1, intro: 'A DUST BUNNY sneezed its way out of the rug!',
+    moves: [{ p: 3, t: 'The DUST BUNNY tackles you with pure fluff!' }, { p: 2, t: 'The DUST BUNNY explodes into a sneeze cloud! Achoo!' }, { p: 0, t: 'The DUST BUNNY wiggles its nose. It is unbearably cute.' }],
+    talk: ['Kristen compliments its fluffiness.', 'It blushes a deeper shade of grey.'], spare: 2, spareText: 'The DUST BUNNY floats away happily, like a tiny cloud.' },
+  bat: { name: 'GRUMPY BAT', sprite: 'bat', hp: 14, atk: 2, sarc: 1.5, intro: 'A GRUMPY BAT swooped down from the rafters!',
+    moves: [{ p: 2, t: 'The GRUMPY BAT screeches! Your ears ring!' }, { p: 3, t: 'The GRUMPY BAT nibbles your elbow!' }, { p: 0, t: 'The GRUMPY BAT hangs upside down and judges your shoes.' }],
+    talk: ['Kristen asks the bat about its day.', 'BAT: "Terrible. Everyone says I look like a handbag."'], spare: 2, spareText: 'The GRUMPY BAT flaps off to complain to somebody else.' },
+  teapot: { name: 'HAUNTED TEAPOT', sprite: 'teapot', hp: 15, atk: 2, sarc: 1, intro: 'A HAUNTED TEAPOT rattled out of the shadows!',
+    moves: [{ p: 4, t: 'The HAUNTED TEAPOT fires a scalding spout!' }, { p: 0, t: 'The HAUNTED TEAPOT rattles its lid menacingly. Rattle rattle.' }, { p: 2, t: 'The HAUNTED TEAPOT does a lukewarm splash. Meh.' }],
+    talk: ['Kristen asks if it is Earl Grey.', 'TEAPOT: "I am DARJEELING, you uncultured swine!"'], spare: 2, spareText: 'The HAUNTED TEAPOT steams off in a huff.' },
+  clanks: { name: 'SIR CLANKSALOT', sprite: 'clanks', hp: 38, atk: 4, sarc: 3, boss: true, intro: 'SIR CLANKSALOT draws his sword! CLANK!',
+    moves: [{ p: 4, t: 'SIR CLANKSALOT bashes you with his shield!' }, { p: 5, t: 'SIR CLANKSALOT swishes his sword!' }, { p: 0, t: 'SIR CLANKSALOT gives a long speech about honour. You nap briefly.' }, { p: 0, heal: 6, t: 'SIR CLANKSALOT stops to polish his armour. Shiny!' }],
+    talk: ["Kristen asks what's under the armour.", 'CLANKSALOT: "NOTHING! I mean... nobody! I mean... HALT!"', 'He refuses to discuss it further.'],
+    sarcText: "SIR CLANKSALOT's fragile ego cracks!" },
+  soup: { name: 'SOUPERIOR BEING', sprite: 'soup', hp: 26, atk: 3, sarc: 1, boss: true, intro: 'The SOUPERIOR BEING rises from the pot!',
+    moves: [{ p: 4, t: 'The SOUPERIOR BEING does a hot splash!' }, { p: 5, t: 'The SOUPERIOR BEING fires a crouton barrage!' }, { p: 0, t: 'The SOUPERIOR BEING smells delicious. You feel very confused.' }],
+    talk: ['Kristen asks what flavour it is.', 'SOUP: "I AM CHILLI CON CARNAGE!"', 'It bubbles ominously.'] },
+  smudge: { name: 'SMUDGE', sprite: 'smudge', hp: 36, atk: 4, sarc: 0.5, boss: true, intro: 'SMUDGE the dragon woke up grumpy!',
+    moves: [{ p: 5, t: 'SMUDGE breathes a tiny flame! Your eyebrows!' }, { p: 4, t: 'SMUDGE swipes with its tail!' }, { p: 0, t: 'SMUDGE does big sad eyes. It clearly wants a biscuit.' }],
+    talk: ['Kristen tells SMUDGE it is a very good dragon.', "SMUDGE's tail wags so hard it knocks over a statue.", 'SMUDGE rolls over for belly rubs!'], spare: 3,
+    spareText: 'SMUDGE has decided you are its new best friend!' },
+  baron: { name: 'THE BARON', sprite: 'baron', hp: 60, atk: 4, sarc: 1.5, boss: true, noFlee: true, intro: 'BARON VON GRUMBLEWICK attacks!',
+    moves: [{ p: 5, t: 'The BARON slams you with his giant ledger!' }, { p: 2, lower: 1, t: 'The BARON performs a SURPRISE AUDIT! Your confidence drops!' }, { p: 4, drain: 5, t: 'The BARON sends a vampiric invoice! It drains your HP!' }, { p: 0, t: 'The BARON swishes his cape dramatically. Lovely cape, to be fair.' }],
+    talk: ['Kristen asks if he has tried hiring an accountant.', 'BARON: "YOU are my accountant!"', 'BARON: "My last one ran off with the abacus!" *sniff*', 'He blows his nose on his cape, then attacks anyway.'] },
+};
+
+/* ================= TEXT / UI HELPERS ================= */
+function setFont(size = FS) { ctx.font = `${size}px ${FONT}`; }
+function wrap(text, maxW, size = FS) {
+  setFont(size);
+  const out = [];
+  for (const para of String(text).split('\n')) {
+    let line = '';
+    for (const word of para.split(' ')) {
+      const test = line ? line + ' ' + word : word;
+      if (ctx.measureText(test).width > maxW && line) { out.push(line); line = word; }
+      else line = test;
+    }
+    out.push(line);
+  }
+  return out;
+}
+function paginate(text, maxW = 218, lines = 3) {
+  const all = wrap(text, maxW); const pages = [];
+  for (let i = 0; i < all.length; i += lines) pages.push(all.slice(i, i + lines));
+  return pages;
+}
+function txt(s, x, y, color = '#2a2440', size = FS, align = 'left') {
+  setFont(size); ctx.textBaseline = 'top'; ctx.textAlign = align; ctx.fillStyle = color; ctx.fillText(s, x, y); ctx.textAlign = 'left';
+}
+function shadowTxt(s, x, y, color, size, align, sh = '#000') { txt(s, x + 1, y + 1, sh, size, align); txt(s, x, y, color, size, align); }
+function box(x, y, w, h) {
+  ctx.fillStyle = '#2a2440'; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = '#f8f6ee'; ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
+  ctx.fillStyle = '#9a94b8'; ctx.fillRect(x + 3, y + 3, w - 6, 1); ctx.fillRect(x + 3, y + h - 4, w - 6, 1); ctx.fillRect(x + 3, y + 3, 1, h - 6); ctx.fillRect(x + w - 4, y + 3, 1, h - 6);
+}
+function cursorTri(x, y, color = '#2a2440') { ctx.fillStyle = color; for (let i = 0; i < 4; i++) ctx.fillRect(x + i, y + i, 1, 7 - i * 2); }
+
+function say(text) {
+  return new Promise(res => { ui.dialog = { pages: paginate(text), page: 0, shown: 0, res, hold: false }; });
+}
+function typeHold(lines) {
+  return new Promise(res => { ui.dialog = { pages: [lines], page: 0, shown: 0, res, hold: true }; });
+}
+function menu(items, style = 'choice', opts = {}) {
+  return new Promise(res => { ui.menu = { items, index: opts.index || 0, style, res, cancel: opts.cancel, rects: [] }; });
+}
+async function ask(prompt, options, cancel) {
+  const pages = paginate(prompt);
+  for (let i = 0; i < pages.length - 1; i++) await new Promise(res => { ui.dialog = { pages: [pages[i]], page: 0, shown: 0, res, hold: false }; });
+  await typeHold(pages[pages.length - 1]);
+  const idx = await menu(options, 'choice', { cancel });
+  ui.dialog = null;
+  return idx;
+}
+function waitA() { return new Promise(res => { ui.waitA = res; }); }
+function until(fn) { return new Promise(res => gs.waiters.push({ fn, res })); }
+function fade(target, ms = 250) {
+  return new Promise(res => { gs.fadeTarget = target; gs.fadeSpeed = 1000 / Math.max(ms, 1); gs.fadeRes = res; if (gs.fade === target) { gs.fadeRes = null; res(); } });
+}
+function run(fn) {
+  if (gs.busy) return;
+  gs.busy = true;
+  Promise.resolve().then(fn).catch(e => console.error(e)).finally(() => { gs.busy = false; });
+}
+
+/* ================= MAPS ================= */
+function hallRow(L, R, lc = '#', rc = '#') { return lc + L + '_' + R + rc; }
+const MAPS = {
+  cell: {
+    name: 'Tower Cell', music: 'world', bg: 'hall', enc: null,
+    rows: [
+      "############",
+      "#W###==###W#",
+      "#B.........#",
+      "#....,,,...#",
+      "#T...,,,...#",
+      "#....,,,..o#",
+      "#L........o#",
+      "#####D######",
+    ],
+    exits: [{ x: 5, y: 7, to: 'hall', tx: 1, ty: 2, dir: 'down', cond: () => gs.flags.cellOpen }],
+    entities: [],
+    interact: {
+      '1,2': () => say("A lumpy bed. The bedsheets are surprisingly long. Suspiciously long, even. Rope-like, one might say."),
+      '1,4': async () => {
+        await say('A note on the table. It reads:');
+        await say('"Dear Prisoner, Welcome to Castle Grumblewick! You have been kidnapped to do my TAXES."');
+        await say('"Breakfast is served at never. Warmest regards, BARON VON GRUMBLEWICK."');
+        await say('"P.S. Do NOT climb out of the window. My bathroom is right underneath."');
+      },
+      '10,5': async () => { if (gs.flags.cellBiscuit) return say('Just a barrel. It smells faintly of pickles.'); gs.flags.cellBiscuit = 1; await gain(2, 'hidden in the barrel'); },
+      '10,6': () => say('Just a barrel. It smells faintly of pickles.'),
+      '1,6': () => say("Books: 'So You've Been Kidnapped', 'Moats & You', and 'Tax Law for Vampires, Vol. 9'."),
+      '10,1': windowScript, '1,1': windowScript,
+      '5,7': doorScript,
+    },
+    onEnter: async () => {
+      if (!gs.flags.introDone) {
+        gs.flags.introDone = 1;
+        await say('Kristen woke up with a headache, in a tower, in a castle she definitely did not book.');
+        await say('KRISTEN: "Hmm. This is not my flat."');
+        await say('KRISTEN: "Right. Time to escape." (Press A to look at things and talk. Press B for your bag.)');
+      }
+    }
+  },
+  hall: {
+    name: 'Great Hall', music: 'world', bg: 'hall', enc: ['dustbunny', 'bat', 'teapot'],
+    rows: [
+      "#############################",
+      "#S##=###F###=#d#=###W###=####",
+      hallRow("............P", "P.....LLLLL.."),
+      hallRow(".............", "............."),
+      hallRow("..,,,,,,,....", "............."),
+      hallRow("..,,,,,,,....", "............."),
+      hallRow("..,,,,,,,...P", "P............"),
+      hallRow("..,,,,,,,....", "....TT......."),
+      hallRow("..,,,,,,,....", "............."),
+      hallRow(".............", "............."),
+      hallRow("............P", "P............", 'd', 'd'),
+      hallRow(".............", "............."),
+      hallRow(".............", "...,,,,,,,,.."),
+      hallRow("..,,,,,,.....", "...,,,,,,,,.."),
+      hallRow("..,,,,,,....P", "P..,,,,,,,,.."),
+      hallRow("..,,,,,,.....", "...,,,,,,,,.."),
+      hallRow("..,,,,,,.....", "...,,,,,,,,.."),
+      hallRow(".............", "............."),
+      hallRow("o...........P", "P...........o"),
+      hallRow("oo...........", "...........oo"),
+      hallRow(".............", "............."),
+      "##############G##############",
+    ],
+    exits: [
+      { x: 1, y: 1, to: 'cell', tx: 5, ty: 6, dir: 'up' },
+      { x: 14, y: 1, to: 'throne', tx: 7, ty: 9, dir: 'up' },
+      { x: 0, y: 10, to: 'court', tx: 22, ty: 8, dir: 'left' },
+      { x: 28, y: 10, to: 'kitchen', tx: 1, ty: 6, dir: 'right' },
+    ],
+    entities: [
+      { id: 'clanks', x: 14, y: 2, sprite: 'clanks', visible: () => !gs.flags.clanksGone, talk: clanksScript },
+      { id: 'ghost', x: 6, y: 11, sprite: 'ghost', float: true, talk: ghostScript },
+      { id: 'chest1', x: 26, y: 3, sprite: () => gs.flags.chest1 ? 'chest_open' : 'chest', talk: chest('chest1', 2) },
+    ],
+    interact: {
+      '8,1': portraitScript,
+      '14,21': () => say('The main gate. Locked with a padlock the size of a sheep. The BARON must have the key.'),
+      '1,18': async () => { if (gs.flags.hallBarrel) return say('An empty barrel. You check it twice, just in case. Still empty.'); gs.flags.hallBarrel = 1; await gain(1, 'in a barrel'); },
+      '19,7': () => say('Someone left a half-finished jigsaw of the castle on the table. The castle is missing.'),
+      '20,7': () => say('Someone left a half-finished jigsaw of the castle on the table. The castle is missing.'),
+    },
+    steps: { '14,3': () => { if (!gs.flags.clanksGone) return clanksScript(); } },
+    onEnter: async () => {
+      if (!gs.flags.hallIntro) { gs.flags.hallIntro = 1; await say("The Great Hall of Castle Grumblewick. The rugs look suspiciously fluffy..."); }
+    }
+  },
+  kitchen: {
+    name: 'Kitchen', music: 'world', bg: 'kitchen', enc: null,
+    rows: [
+      "##############",
+      "#=##W##=##W#=#",
+      "#kkcckk..oo..#",
+      "#............#",
+      "#........TT..#",
+      "#............#",
+      "d............#",
+      "#..........oo#",
+      "#..........o.#",
+      "##############",
+    ],
+    exits: [{ x: 0, y: 6, to: 'hall', tx: 27, ty: 10, dir: 'left' }],
+    entities: [
+      { id: 'chef', x: 3, y: 3, sprite: 'chef', talk: chefScript },
+      { id: 'chest2', x: 12, y: 8, sprite: () => gs.flags.chest2 ? 'chest_open' : 'chest', talk: chest('chest2', 2) },
+    ],
+    interact: {
+      '3,2': () => say('A bubbling pot of extremely beige soup. It smells of disappointment.'),
+      '4,2': () => say('A bubbling pot of extremely beige soup. It smells of disappointment.'),
+    },
+    onEnter: async () => { if (!gs.flags.kitchenIntro) { gs.flags.kitchenIntro = 1; await say('The castle kitchen. Something smells... beige.'); } }
+  },
+  court: {
+    name: 'Courtyard', music: 'world', bg: 'court', outdoor: true, enc: ['bat', 'dustbunny'],
+    rows: [
+      "########################",
+      "#=###=###=###=###=###=##",
+      "#tt..gggggg......ggggtt#",
+      "#t...gggggg......gggg.t#",
+      "#....gggggg...........t#",
+      "#..ff..........ff......#",
+      "#......................#",
+      "#...gggg...............#",
+      "#...gggg....:::::::::::d",
+      "#...gggg...ff..........#",
+      "#......................#",
+      "#tt....gggggggg......tt#",
+      "#t.....gggggggg.......t#",
+      "#h...............ww....#",
+      "#h..............wwww...#",
+      "########################",
+    ],
+    exits: [{ x: 23, y: 8, to: 'hall', tx: 1, ty: 10, dir: 'right' }],
+    entities: [
+      { id: 'smudge', x: 12, y: 3, sprite: 'smudge', sleep: () => !gs.flags.smudgeFriend, talk: smudgeScript },
+      { id: 'chest3', x: 20, y: 13, sprite: () => gs.flags.chest3 ? 'chest_open' : 'chest', talk: chest('chest3', 2) },
+    ],
+    interact: { '1,13': hayScript, '1,14': hayScript },
+    onEnter: async () => { if (!gs.flags.courtIntro) { gs.flags.courtIntro = 1; await say('The castle courtyard. Fresh air! And... is that snoring?'); } }
+  },
+  throne: {
+    name: 'Throne Room', music: 'title', bg: 'throne', enc: null,
+    rows: [
+      "###############",
+      "#=##W##=##W##=#",
+      "#P.....K.....P#",
+      "#......_......#",
+      "#P....._.....P#",
+      "#......_......#",
+      "#P....._.....P#",
+      "#......_......#",
+      "#P....._.....P#",
+      "#......_......#",
+      "#######d#######",
+    ],
+    exits: [{ x: 7, y: 10, to: 'hall', tx: 14, ty: 2, dir: 'down' }],
+    entities: [{ id: 'baron', x: 7, y: 3, sprite: 'baron', talk: baronScript }],
+    interact: { '7,2': () => say("The Baron's throne. It has a cushion embroidered with 'WORLD'S BEST BARON'.") },
+    steps: { '7,5': () => { if (!gs.flags.baronMet) return baronScript(); } },
+  },
+};
+for (const [id, m] of Object.entries(MAPS)) {
+  m.id = id; m.h = m.rows.length; m.w = Math.max(...m.rows.map(r => r.length));
+  m.rows.forEach((r, i) => { if (r.length !== m.w) console.warn('Row length mismatch', id, i, r.length, m.w); });
+}
+const FLAVOR = {
+  L: () => say(['Books: "Moats for Dummies", "101 Dungeon Recipes", and "Sir Clanksalot: My Story (Vol. 1-12)".', 'A book called "How To Train Your Dust Bunny". Chapter 1: You Cannot.', 'A very old cookbook. Every recipe starts with "First, catch your newt."'][rnd(0, 2)]),
+  o: () => say('A barrel. It smells faintly of pickles.'),
+  T: () => say('A sturdy wooden table.'),
+  W: () => say('A window. Cold wind. Long way down. A bat waves at you.'),
+  P: () => say('A stone pillar. Very sturdy. Completely unhelpful.'),
+  k: () => say('Ingredients: an onion, a bag of flour, and a suspicious eyeball. Probably an olive.'),
+  t: () => say('A tree. It is being a tree very competently.'),
+  w: () => say('A murky pond. Something blinks at you from the depths. You blink back.'),
+  f: () => say('Pretty flowers! Kristen sniffs them. ACHOO!'),
+  S: () => say('Stairs back up to the tower cell.'),
+  '=': () => say('A flickering torch. Cosy, in a dungeon-y sort of way.'),
+};
+
+/* ================= SCRIPTS ================= */
+async function gain(n, where) {
+  Sound.sfx('item'); gs.biscuits += n;
+  await say(`Kristen found ${n} BISCUIT${n > 1 ? 'S' : ''}${where ? ' ' + where : ''}! (Biscuits: ${gs.biscuits})`);
+}
+function chest(flag, n) {
+  return async () => {
+    if (gs.flags[flag]) return say('An empty chest. Just a few crumbs left.');
+    gs.flags[flag] = 1; await gain(n, 'in the chest');
+  };
+}
+async function faint(msg) {
+  Sound.sfx('faint');
+  await say(msg || 'Kristen fainted dramatically!');
+  await fade(1, 500);
+  gs.hp = gs.maxHp; B = null;
+  const c = gs.checkpoint;
+  loadMap(c.id, c.x, c.y, c.dir);
+  gs.mode = 'world'; Sound.music(gs.map.music);
+  await fade(0, 500);
+  await say('Kristen wakes up on a conveniently placed fainting couch, fully rested and only slightly embarrassed.');
+}
+async function afterBattleLoss(msg) { return faint(msg); }
+
+async function windowScript() {
+  const c = await ask('A long way down. The bedsheets look long enough to make a rope... probably.', ['Make a bedsheet rope!', 'Nope, too scary'], 1);
+  if (c === 0) { await say('Kristen knots the sheets together with tremendous confidence...'); return ending('sheets'); }
+  await say('KRISTEN: "Maybe I\'ll look for a door like a normal person."');
+}
+async function doorScript() {
+  if (gs.flags.cellOpen) return;
+  const c = await ask('The door is locked. Very locked. Extremely locked.', ['Pick it with a hairpin', 'Yell for the guard', 'Kick it', 'Leave it'], 3);
+  if (c === 0) {
+    await say('Kristen pulls a hairpin out of her glorious dark hair.');
+    await say('Click... click... scritch... CLUNK!');
+    Sound.sfx('door'); gs.flags.cellOpen = 1;
+    await say('The door swings open! Who knew hairpins were so useful?');
+  } else if (c === 1) {
+    await say('KRISTEN: "HELLOOOO! I\'d like to speak to the manager about my room!"');
+    await say('*stomp stomp stomp*');
+    await say('GOBBO: "OI! Wot\'s all this racket? Yelling is MY job!"');
+    const r = await battle('gobbo');
+    if (r === 'win') { gs.flags.cellOpen = 1; await say('GOBBO runs off crying for his mum. He left the door wide open!'); }
+    else if (r === 'flee') await say('Kristen hides under the bed. GOBBO gets bored and stomps off. The door is still locked.');
+    else await faint('GOBBO locks the door again. "And STAY quiet!"');
+  } else if (c === 2) {
+    Sound.sfx('hurt'); gs.hp = Math.max(1, gs.hp - 2); gs.shake = 0.3;
+    await say('Kristen kicks the door. OW! The door wins this round. (-2 HP)');
+  }
+}
+async function portraitScript() {
+  if (gs.flags.moustache) return say('The portrait now has a magnificent curly moustache. Art.');
+  await say('A portrait of BARON VON GRUMBLEWICK, looking extremely smug.');
+  const c = await ask('There is a pen on the floor right next to it...', ['Draw a moustache', 'Leave it'], 1);
+  if (c === 0) { gs.flags.moustache = 1; Sound.sfx('select'); await say('Kristen draws a magnificent curly moustache on the portrait. Much better.'); }
+}
+const GHOST_TIPS = [
+  'WOBBLETON: "Sir Clanksalot guards the throne room. His ego is as fragile as a meringue. Sarcasm, madam. Sarcasm."',
+  'WOBBLETON: "Our dragon, Smudge, lives in the courtyard to the west. A terrible sucker for biscuits."',
+  'WOBBLETON: "The cook in the kitchen to the east is having a soup crisis. Do help, if you dare."',
+  'WOBBLETON: "The Baron keeps the gate key in his cape. He is also hopeless with numbers."',
+  'WOBBLETON: "If the rugs start sneezing, madam, that is perfectly normal. Mostly."',
+];
+async function ghostScript() {
+  if (!gs.flags.metGhost) {
+    gs.flags.metGhost = 1;
+    await say('WOBBLETON: "Good evening, madam. I am Wobbleton, the castle butler. Recently deceased."');
+    await say('WOBBLETON: "Well, recently. Four hundred years ago. Time flies when you\'re haunting."');
+  }
+  const c = await ask('WOBBLETON: "May I offer you anything?"', ['Tea, please', 'Any tips?', 'No thanks'], 2);
+  if (c === 0) { Sound.sfx('heal'); gs.hp = gs.maxHp; await say('Kristen sips some ghost tea. It is cold, but strangely refreshing. HP fully restored!'); }
+  else if (c === 1) { const i = (gs.flags.tip || 0) % GHOST_TIPS.length; gs.flags.tip = i + 1; await say(GHOST_TIPS[i]); }
+  else await say('WOBBLETON: "Very good, madam." *wobbles away slightly*');
+}
+async function clanksScript() {
+  await say('SIR CLANKSALOT: "HALT! None shall pass into the throne room of the mighty BARON!"');
+  const c = await ask('SIR CLANKSALOT: "...By the way. Do you like my armour?"', ["It's so shiny!", "It's a bit rusty", 'Is anyone in there?']);
+  let mod = 0;
+  if (c === 0) { await say('SIR CLANKSALOT: "Really?! Nobody EVER says that!" *happy clanking*'); await say('SIR CLANKSALOT: "...I still have to fight you, though. Sorry. Rules."'); mod = -1; }
+  else if (c === 1) { await say('SIR CLANKSALOT: "RUSTY?! HOW DARE YOU! EN GARDE!"'); mod = 1; }
+  else await say('SIR CLANKSALOT: "That is a VERY personal question! HAVE AT YOU!"');
+  const r = await battle('clanks', { atkMod: mod });
+  if (r === 'win') {
+    gs.flags.clanksGone = 1;
+    await say('SIR CLANKSALOT: "I yield! My armour... my beautiful armour... it\'s DENTED!"');
+    await say('He clanks away, sobbing into his gauntlets. The way to the throne room is open!');
+  } else if (r === 'flee') await say('Kristen backs away slowly. SIR CLANKSALOT polishes his helmet, smugly.');
+  else await faint('SIR CLANKSALOT: "Victory! ...Can someone carry her to the couch? Gently!"');
+}
+async function chefScript() {
+  if (gs.flags.chefDone) return say('CHEF GRISTLE: "Thank you for... whatever that was. Now SHOO!"');
+  if (!gs.flags.chefMet) {
+    gs.flags.chefMet = 1;
+    await say('CHEF GRISTLE: "WOE! DISASTER! The Baron\'s soup is BLAND and his dinner party is TONIGHT!"');
+    await say('CHEF GRISTLE: "You! Prisoner! You look like someone with TASTE. Fix my soup!"');
+  } else await say('CHEF GRISTLE: "Back to help? Quick, the soup grows ever more beige!"');
+  const c = await ask('What will Kristen add to the soup?', ['A pinch of salt', 'The whole chilli jar', 'Her left sock', 'Not my problem'], 3);
+  if (c === 0) {
+    await say('Kristen adds one delicate pinch of salt.');
+    await say('CHEF GRISTLE: *slurp* "...It is FINE. It is acceptable. Here, have some biscuits for your trouble."');
+    gs.flags.chefDone = 1; await gain(2);
+  } else if (c === 1) {
+    await say('Kristen empties the ENTIRE jar of chilli into the pot.');
+    await say('The soup begins to bubble... and glow... and RISE!');
+    await say('CHEF GRISTLE: "WHAT HAVE YOU DONE?!"');
+    const r = await battle('soup');
+    if (r === 'win') {
+      await say('The SOUPERIOR BEING splashes back into the pot, defeated.');
+      await say('CHEF GRISTLE: "You... you defeated DINNER! Take these biscuits and never come back!"');
+      gs.flags.chefDone = 1; await gain(3);
+    } else if (r === 'flee') await say('Kristen ducks behind the counter. The soup eventually calms down. Mostly.');
+    else await faint('The soup engulfs Kristen. She tastes... spicy.');
+  } else if (c === 2) {
+    await say('Kristen removes her left sock and drops it into the pot. Plop.');
+    await say('CHEF GRISTLE: "Are you MAD?!" *slurp*');
+    await say('CHEF GRISTLE: "...!!!"');
+    await say('CHEF GRISTLE: "It\'s... it\'s MAGNIFICENT! Earthy! Complex! With notes of... ADVENTURE!"');
+    await say('CHEF GRISTLE: "You must be my new head chef! I insist! I\'ll get you a hat!"');
+    return ending('chef');
+  } else await say('CHEF GRISTLE: "FINE! Be that way! The Baron will have me ROASTED!"');
+}
+async function hayScript() {
+  const c = await ask("A cart full of hay, hitched to a dozing donkey. It's pointed at the side gate. Jump in?", ['Dive into the hay!', 'Maybe later'], 1);
+  if (c === 0) { await say('Kristen takes a running jump and dives head-first into the hay. FLUMPH.'); return ending('hay'); }
+  await say('The donkey opens one eye, judges you, and closes it again.');
+}
+async function smudgeRide() {
+  const c = await ask('SMUDGE lowers a wing. It wants to give you a ride!', ['Fly away home!', 'Not just yet'], 1);
+  if (c === 0) { await say('Kristen climbs aboard. SMUDGE flaps, wobbles, and takes off with a joyful squawk!'); return ending('dragon'); }
+  await say('SMUDGE looks a bit sad, then goes back to chasing its own tail.');
+}
+async function smudgeScript() {
+  if (gs.flags.smudgeFriend) return smudgeRide();
+  if (!gs.flags.smudgeSign) { gs.flags.smudgeSign = 1; await say('A small dragon is curled up asleep. A sign reads: "SMUDGE. DO NOT WAKE. SERIOUSLY."'); }
+  const c = await ask('Each snore puffs out a perfect little smoke ring. What will Kristen do?', ['Offer a biscuit', 'Tiptoe past', 'Poke it', 'Leave it'], 3);
+  if (c === 3) return;
+  if (c === 0) {
+    if (gs.biscuits < 1) return say('Kristen checks her pockets... no biscuits! SMUDGE snores on.');
+    gs.biscuits--;
+    await say('Kristen waves a biscuit under SMUDGE\'s nose.');
+    await say('SMUDGE\'s eyes snap open. CHOMP! The biscuit is gone, along with part of Kristen\'s sleeve.');
+    await say('SMUDGE purrs like a chainsaw and nuzzles Kristen. You have a new best friend!');
+    gs.flags.smudgeFriend = 1;
+    return smudgeRide();
+  }
+  if (c === 1) { await say('Kristen tiptoes past... and steps on a squeaky rubber chicken. SQUEEEEAK.'); await say('...Why is there a rubber chicken?!'); }
+  else { await say('Kristen pokes the dragon. Poke. Poke. Poke.'); await say('SMUDGE: "RAWR!" (That means "five more minutes" in dragon.)'); }
+  const r = await battle('smudge');
+  if (r === 'win' || r === 'spare') {
+    gs.flags.smudgeFriend = 1;
+    await say('SMUDGE flops over and shows its belly. It has decided Kristen is its new best friend!');
+    return smudgeRide();
+  } else if (r === 'flee') await say('Kristen runs away! SMUDGE yawns and goes back to sleep.');
+  else await faint('SMUDGE sits on Kristen. Not angrily. Just... heavily.');
+}
+async function baronScript() {
+  if (!gs.flags.baronMet) {
+    gs.flags.baronMet = 1;
+    await say('BARON: "AH-HA! My prisoner! You escaped your cell, defeated my knight, and tracked mud all over my carpet!"');
+    await say('BARON: "I am BARON VON GRUMBLEWICK! And YOU are going to do my TAXES!"');
+  }
+  for (;;) {
+    const c = await ask('BARON: "Well? Will you do my taxes?"', ["Fine, I'll do them", 'Never! Fight me!', "What's in it for me?"]);
+    if (c === 0) { await say('Kristen sighs, cracks her knuckles, and asks for a calculator...'); return ending('taxes'); }
+    if (c === 2) { await say('BARON: "A complimentary pen! It has my FACE on it!"'); await say('Kristen is not impressed.'); continue; }
+    await say('BARON: "Then prepare to be... AUDITED! Mwahahaha!"');
+    const r = await battle('baron');
+    if (r === 'lose') { await say('BARON: "Mwahaha! Now... about those receipts."'); return ending('intern'); }
+    await say('BARON: "Ow! OW! Stop! Not the hair! I surrender!"');
+    await say("The BARON drops a large golden key. It's the GATE KEY!");
+    const c2 = await ask('BARON: "Take the key and go! Or take the whole castle! Just stop hitting me with your hair!"', ['Take the throne', 'Take the key, go home']);
+    if (c2 === 0) { await say('Kristen strides past the Baron and plonks herself onto the throne.'); return ending('queen'); }
+    await say('Kristen grabs the key and heads for the gate, whistling.');
+    return ending('home');
+  }
+}
+
+/* ================= BATTLE ================= */
+async function battle(key, opts = {}) {
+  const E = ENEMIES[key];
+  const en = { ...E, hp: E.hp, maxHp: E.hp, atk: Math.max(0, E.atk + (opts.atkMod || 0)), talks: 0 };
+  Sound.sfx('encounter');
+  for (let i = 0; i < 3; i++) { gs.flash = 1; await wait(80); gs.flash = 0; await wait(80); }
+  await fade(1, 200);
+  gs.mode = 'battle'; Sound.music('battle');
+  B = { en, eHp: en.hp, pHp: gs.hp, enter: 0, eBlink: 0, pShake: 0, eDie: 0, bg: gs.map.bg, atkStart: gs.atk };
+  await fade(0, 200);
+  await until(() => B.enter >= 1);
+  await say(E.intro);
+  let result = null;
+  const moveNames = MOVES.map(m => m.name);
+  while (!result) {
+    ui.dialog = { pages: [['What will', 'Kristen do?']], page: 0, shown: 999, hold: true, res: null };
+    const c = await menu(['FIGHT', 'TALK', 'SNACK', 'FLEE'], 'battle', { index: B.lastMain || 0 });
+    B.lastMain = c;
+    ui.dialog = null;
+    let acted = true;
+    if (c === 0) {
+      const m = await menu(moveNames, 'moves', { cancel: -1, index: B.lastMove || 0 });
+      if (m < 0) continue;
+      B.lastMove = m;
+      await playerMove(MOVES[m], en);
+    } else if (c === 1) {
+      en.talks++;
+      await say(en.talk[Math.min(en.talks - 1, en.talk.length - 1)]);
+      if (en.spare && en.talks >= en.spare) { Sound.sfx('select'); await say(en.spareText); result = 'spare'; break; }
+    } else if (c === 2) {
+      if (gs.biscuits < 1) { await say('Kristen rummages in her bag... no biscuits left!'); acted = false; }
+      else {
+        gs.biscuits--; const heal = Math.min(20, gs.maxHp - gs.hp); gs.hp += heal; Sound.sfx('heal');
+        await say(`Kristen munches a biscuit. Crunch! Recovered ${heal} HP.` + (key === 'smudge' ? ' SMUDGE watches with enormous jealousy.' : ''));
+        await until(() => Math.abs(B.pHp - gs.hp) < 0.5);
+      }
+    } else if (c === 3) {
+      if (E.noFlee) { await say("KRISTEN: \"I'll just... pop out for a moment.\" The BARON locks the door. There's no escape!"); }
+      else if (Math.random() < (E.boss ? 0.5 : 0.75)) { Sound.sfx('door'); await say('Kristen made a dignified escape! (She ran.)'); result = 'flee'; break; }
+      else await say("Kristen tried to run, but tripped over her own dramatic exit!");
+    }
+    if (en.hp <= 0) {
+      Sound.sfx('down'); B.eDie = 0.001; await until(() => B.eDie >= 1);
+      await say(`${en.name} was defeated!`);
+      result = 'win'; break;
+    }
+    if (!acted) continue;
+    await enemyMove(en);
+    if (gs.hp <= 0) { result = 'lose'; break; }
+  }
+  if (result === 'win') {
+    Sound.music(''); Sound.sfx('win');
+    gs.wins++; gs.maxHp += 4; gs.hp = Math.min(gs.maxHp, gs.hp + 4); gs.atk = Math.max(B.atkStart, gs.atk) + 1;
+    await say(`Kristen's confidence grew! Max HP +4, Attack +1.`);
+  }
+  if (result === 'lose') { Sound.music(''); Sound.sfx('faint'); await say('Kristen ran out of HP!'); gs.atk = Math.max(gs.atk, B.atkStart); return result; }
+  gs.atk = Math.max(gs.atk, B.atkStart);
+  await fade(1, 250);
+  gs.mode = 'world'; B = null; Sound.music(gs.map.music);
+  await fade(0, 250);
+  return result;
+}
+async function playerMove(mv, en) {
+  if (mv.sarc) await say(`Kristen: ${SARCASM[rnd(0, SARCASM.length - 1)]}`);
+  else await say(mv.text);
+  if (Math.random() * 100 >= mv.acc) { Sound.sfx('miss'); await say('But it missed!'); return; }
+  if (mv.glare) {
+    if (en.atk <= 0) await say(`${en.name} is already thoroughly withered.`);
+    else { en.atk--; Sound.sfx('down'); await say(`${en.name} shrinks a little! Its attack fell!`); }
+    return;
+  }
+  let dmg;
+  if (mv.sarc) dmg = Math.round((mv.power + gs.atk / 2) * en.sarc * (0.9 + Math.random() * 0.2));
+  else dmg = Math.round((mv.power + gs.atk) * (0.85 + Math.random() * 0.3));
+  dmg = Math.max(1, dmg);
+  en.hp = Math.max(0, en.hp - dmg);
+  Sound.sfx('hit'); B.eBlink = 0.6;
+  await until(() => Math.abs(B.eHp - en.hp) < 0.5);
+  if (mv.sarc && en.sarc >= 2) await say(en.sarcText || "It's super effective! Their ego shatters!");
+  else if (mv.sarc && en.sarc < 1) await say("It didn't really get the joke...");
+}
+async function enemyMove(en) {
+  const mv = en.moves[rnd(0, en.moves.length - 1)];
+  await say(mv.t);
+  if (mv.heal) { en.hp = Math.min(en.maxHp, en.hp + mv.heal); Sound.sfx('heal'); await until(() => Math.abs(B.eHp - en.hp) < 0.5); return; }
+  if (!mv.p) return;
+  const dmg = mv.p + en.atk + rnd(0, 1);
+  gs.hp = Math.max(0, gs.hp - dmg);
+  Sound.sfx('hurt'); B.pShake = 0.4; gs.shake = 0.25;
+  await until(() => Math.abs(B.pHp - gs.hp) < 0.5);
+  if (mv.drain) { en.hp = Math.min(en.maxHp, en.hp + mv.drain); await until(() => Math.abs(B.eHp - en.hp) < 0.5); }
+  if (mv.lower && gs.atk > 1) { gs.atk -= mv.lower; await say("Kristen's attack fell! (Just for this fight.)"); }
+}
+
+/* ================= ENDING / TITLE ================= */
+async function ending(id) {
+  const E = ENDINGS[id];
+  await fade(1, 700);
+  Sound.music('ending');
+  gs.mode = 'ending'; gs.endingId = id; gs.endT = 0; B = null;
+  const isNew = !foundEndings.includes(id);
+  if (isNew) { foundEndings.push(id); store.set('kge_endings', foundEndings); }
+  gs.endingNew = isNew;
+  await fade(0, 700);
+  await wait(400);
+  for (const line of E.text) await say(line);
+  gs.endingDone = true;
+  await waitA();
+  gs.endingDone = false;
+  await fade(1, 600);
+  gs.mode = 'title'; Sound.music('title');
+  await fade(0, 600);
+}
+function newGame() {
+  Object.assign(gs, { flags: {}, hp: 30, maxHp: 30, atk: 4, biscuits: 1, wins: 0, stepsSinceEnc: 0 });
+  run(async () => {
+    await fade(1, 500);
+    gs.mode = 'world';
+    loadMap('cell', 2, 2, 'down');
+    gs.checkpoint = { id: 'cell', x: 2, y: 2, dir: 'down' };
+    Sound.music('world');
+    await fade(0, 600);
+    await gs.map.onEnter();
+  });
+}
+async function bagMenu() {
+  const c = await ask(`KRISTEN  HP ${gs.hp}/${gs.maxHp}  ATK ${gs.atk}\nBiscuits: ${gs.biscuits}   Endings: ${foundEndings.length}/8`, ['Eat a biscuit', 'Close'], 1);
+  if (c === 0) {
+    if (gs.biscuits < 1) return say('No biscuits! A tragedy.');
+    if (gs.hp >= gs.maxHp) return say('Kristen is already at full HP. Save it for later!');
+    gs.biscuits--; const heal = Math.min(20, gs.maxHp - gs.hp); gs.hp += heal; Sound.sfx('heal');
+    await say(`Crunch! Kristen recovered ${heal} HP.`);
+  }
+}
+
+/* ================= WORLD ================= */
+function loadMap(id, x, y, dir) {
+  gs.map = MAPS[id]; gs.mapId = id;
+  Object.assign(gs.p, { x, y, tx: x, ty: y, t: 0, moving: false, dir: dir || gs.p.dir });
+}
+async function goto(id, x, y, dir) {
+  Sound.sfx('door');
+  await fade(1, 220);
+  loadMap(id, x, y, dir);
+  gs.checkpoint = { id, x, y, dir };
+  Sound.music(gs.map.music);
+  await fade(0, 220);
+  if (gs.map.onEnter) await gs.map.onEnter();
+}
+function tileAt(x, y) { const m = gs.map; if (y < 0 || y >= m.h || x < 0 || x >= m.w) return ' '; return m.rows[y][x] || ' '; }
+function entityAt(x, y) { return gs.map.entities.find(e => e.x === x && e.y === y && (!e.visible || e.visible())); }
+function walkable(x, y) {
+  const t = tileAt(x, y);
+  if (t === 'D') return gs.mapId === 'cell' && gs.flags.cellOpen;
+  if (SOLID.has(t)) return false;
+  return !entityAt(x, y);
+}
+const DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+function interact() {
+  const [dx, dy] = DIRS[gs.p.dir];
+  const x = gs.p.x + dx, y = gs.p.y + dy;
+  const e = entityAt(x, y);
+  if (e && e.talk) return run(e.talk);
+  const fn = gs.map.interact && gs.map.interact[x + ',' + y];
+  if (fn) return run(fn);
+  const t = tileAt(x, y);
+  if (FLAVOR[t]) return run(FLAVOR[t]);
+}
+function onStep() {
+  const p = gs.p, m = gs.map;
+  p.steps++;
+  const ex = m.exits.find(e => e.x === p.x && e.y === p.y && (!e.cond || e.cond()));
+  if (ex) return run(() => goto(ex.to, ex.tx, ex.ty, ex.dir));
+  const st = m.steps && m.steps[p.x + ',' + p.y];
+  if (st) { run(st); if (gs.busy) return; }
+  if (m.enc && ENCOUNTER_TILES.has(tileAt(p.x, p.y))) {
+    gs.stepsSinceEnc++;
+    if (gs.stepsSinceEnc > 3 && Math.random() < 0.13) {
+      gs.stepsSinceEnc = 0;
+      const k = m.enc[rnd(0, m.enc.length - 1)];
+      run(async () => {
+        const r = await battle(k);
+        if (r === 'lose') await faint();
+      });
+    }
+  }
+}
+const STEP_TIME = 0.2;
+function updateWorld(dt) {
+  const p = gs.p;
+  if (p.moving) {
+    p.t += dt / STEP_TIME;
+    if (p.t >= 1) { p.x = p.tx; p.y = p.ty; p.t = 0; p.moving = false; onStep(); }
+    else return;
+  }
+  if (gs.busy || ui.dialog || ui.menu) return;
+  if (input.pressed.a) { input.pressed.a = false; return interact(); }
+  if (input.pressed.b) { input.pressed.b = false; return run(bagMenu); }
+  const dir = ['up', 'down', 'left', 'right'].find(d => input.held[d]);
+  if (dir) {
+    p.dir = dir;
+    const [dx, dy] = DIRS[dir];
+    if (walkable(p.x + dx, p.y + dy)) { p.tx = p.x + dx; p.ty = p.y + dy; p.moving = true; p.t = 0; }
+    else if (gs.bumpCd <= 0) { Sound.sfx('bump'); gs.bumpCd = 0.3; }
+  }
+}
+
+/* ================= UPDATE ================= */
+function update(dt) {
+  gs.time += dt;
+  gs.bumpCd -= dt; if (gs.shake > 0) gs.shake -= dt;
+  // fade
+  if (gs.fade !== gs.fadeTarget) {
+    const s = gs.fadeSpeed * dt;
+    gs.fade = gs.fade < gs.fadeTarget ? Math.min(gs.fadeTarget, gs.fade + s) : Math.max(gs.fadeTarget, gs.fade - s);
+    if (gs.fade === gs.fadeTarget && gs.fadeRes) { const r = gs.fadeRes; gs.fadeRes = null; r(); }
+  }
+  // battle animation
+  if (B) {
+    B.enter = Math.min(1, B.enter + dt * 2.5);
+    const rate = Math.max(20, B.en.maxHp * 1.2) * dt;
+    B.eHp += clamp(B.en.hp - B.eHp, -rate, rate);
+    const pr = Math.max(20, gs.maxHp * 1.2) * dt;
+    B.pHp += clamp(gs.hp - B.pHp, -pr, pr);
+    if (B.eBlink > 0) B.eBlink -= dt;
+    if (B.pShake > 0) B.pShake -= dt;
+    if (B.eDie > 0 && B.eDie < 1) B.eDie = Math.min(1, B.eDie + dt * 2);
+  }
+  // waiters
+  if (gs.waiters.length) gs.waiters = gs.waiters.filter(w => { if (w.fn()) { w.res(); return false; } return true; });
+
+  // tap handling (menus get direct taps, otherwise tap = A)
+  if (input.tap) {
+    const t = input.tap; input.tap = null;
+    if (ui.menu && ui.menu.rects.length) {
+      const i = ui.menu.rects.findIndex(r => r && t.x >= r.x && t.x <= r.x + r.w && t.y >= r.y && t.y <= r.y + r.h);
+      if (i >= 0) { ui.menu.index = i; input.pressed.a = true; }
+    } else if (ui.dialog || ui.waitA || gs.mode === 'title') input.pressed.a = true;
+  }
+
+  if (ui.dialog && ui.dialog.res !== null || (ui.dialog && !ui.dialog.hold)) {
+    const d = ui.dialog;
+    const full = d.pages[d.page].join('').length;
+    if (d.shown < full) {
+      const before = Math.floor(d.shown);
+      d.shown += dt * 55;
+      if (Math.floor(d.shown / 3) !== Math.floor(before / 3)) Sound.sfx('blip');
+      if (input.pressed.a) { d.shown = full; input.pressed.a = false; }
+      if (d.shown >= full) { d.shown = full; if (d.hold && d.res) { const r = d.res; d.res = null; r(); } }
+    } else if (!d.hold && input.pressed.a) {
+      input.pressed.a = false; Sound.sfx('move');
+      d.page++; d.shown = 0;
+      if (d.page >= d.pages.length) { ui.dialog = null; d.res(); }
+    }
+  }
+  if (ui.menu) {
+    const m = ui.menu, n = m.items.length, cols = (m.style === 'choice') ? 1 : 2;
+    let i = m.index;
+    if (input.pressed.up) i -= cols; if (input.pressed.down) i += cols;
+    if (cols > 1 && input.pressed.left) i -= 1; if (cols > 1 && input.pressed.right) i += 1;
+    i = clamp(i, 0, n - 1);
+    if (i !== m.index) { m.index = i; Sound.sfx('move'); }
+    if (input.pressed.a) { input.pressed.a = false; Sound.sfx('select'); ui.menu = null; m.res(m.index); }
+    else if (input.pressed.b && m.cancel !== undefined) { input.pressed.b = false; Sound.sfx('move'); ui.menu = null; m.res(m.cancel); }
+  }
+  if (ui.waitA && input.pressed.a) { input.pressed.a = false; const r = ui.waitA; ui.waitA = null; Sound.sfx('select'); r(); }
+
+  if (gs.mode === 'title') {
+    if (input.pressed.a && !gs.busy && gs.fade === 0) { input.pressed.a = false; Sound.sfx('select'); newGame(); }
+  } else if (gs.mode === 'world') updateWorld(dt);
+  else if (gs.mode === 'ending') gs.endT += dt;
+  input.pressed = {};
+}
+
+/* ================= DRAW ================= */
+function drawSprite(name, x, y, scale = 1, flipped = false) {
+  const s = SPR[name]; if (!s) return;
+  ctx.drawImage(flipped ? s.f : s.n, Math.round(x), Math.round(y), 16 * scale, 16 * scale);
+}
+function ellipse(cx, cy, rx, ry, col) {
+  ctx.fillStyle = col;
+  for (let dy = -ry; dy <= ry; dy++) { const w = Math.round(rx * Math.sqrt(1 - (dy / ry) * (dy / ry))); ctx.fillRect(cx - w, cy + dy, w * 2, 1); }
+}
+function kristenSprite(dir, frame) {
+  const d = dir === 'left' || dir === 'right' ? 'side' : dir;
+  return { name: `k_${d}_${frame}`, flip: dir === 'left' };
+}
+function drawWorld() {
+  const m = gs.map, p = gs.p;
+  const px = (p.x + (p.tx - p.x) * p.t) * TS, py = (p.y + (p.ty - p.y) * p.t) * TS;
+  const mw = m.w * TS, mh = m.h * TS;
+  let cx = mw <= W ? (mw - W) / 2 : clamp(px + 8 - W / 2, 0, mw - W);
+  let cy = mh <= H ? (mh - H) / 2 : clamp(py + 8 - H / 2, 0, mh - H);
+  if (gs.shake > 0) { cx += rnd(-2, 2); cy += rnd(-2, 2); }
+  cx = Math.round(cx); cy = Math.round(cy);
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  const fr = Math.floor(gs.time * 3);
+  const x0 = Math.max(0, Math.floor(cx / TS)), y0 = Math.max(0, Math.floor(cy / TS));
+  const x1 = Math.min(m.w - 1, Math.ceil((cx + W) / TS)), y1 = Math.min(m.h - 1, Math.ceil((cy + H) / TS));
+  for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
+    const frames = TILES[tileName(m.rows[ty][tx], m.outdoor, gs.mapId, tx, ty)] || TILES.void;
+    ctx.drawImage(frames[fr % frames.length], tx * TS - cx, ty * TS - cy);
+  }
+  // actors
+  const actors = [];
+  for (const e of m.entities) if (!e.visible || e.visible()) actors.push({ y: e.y * TS, draw: () => {
+    const ex = e.x * TS - cx, ey = e.y * TS - cy;
+    const bob = e.float ? Math.round(Math.sin(gs.time * 3) * 1.5) - 2 : 0;
+    ellipse(ex + 8, ey + 15, 6, 2, 'rgba(0,0,0,0.3)');
+    drawSprite(typeof e.sprite === 'function' ? e.sprite() : e.sprite, ex, ey + bob);
+    if (e.sleep && e.sleep()) { const zt = (gs.time % 2) / 2; txt('z', ex + 12 + zt * 4, ey - 2 - zt * 8, `rgba(255,255,255,${1 - zt})`, 6); }
+  } });
+  const walking = p.moving && p.t < 0.5;
+  const frame = walking ? (p.steps % 2 ? 1 : 2) : 0;
+  const ks = kristenSprite(p.dir, frame);
+  actors.push({ y: py, draw: () => {
+    const sx = Math.round(px - cx), sy = Math.round(py - cy) - (walking ? 1 : 0);
+    ellipse(sx + 8, Math.round(py - cy) + 15, 5, 2, 'rgba(0,0,0,0.3)');
+    drawSprite(ks.name, sx, sy, 1, ks.flip);
+  } });
+  actors.sort((a, b) => a.y - b.y).forEach(a => a.draw());
+  if (m.outdoor) { ctx.fillStyle = 'rgba(255,220,150,0.04)'; ctx.fillRect(0, 0, W, H); }
+  else { const g = ctx.createRadialGradient(W / 2, H / 2, 60, W / 2, H / 2, 170); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(10,5,20,0.45)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); }
+  // location tag
+  if (!ui.dialog && !gs.busy) {
+    setFont(6); const w = ctx.measureText(m.name).width + 8;
+    ctx.fillStyle = 'rgba(18,14,24,0.7)'; ctx.fillRect(2, 2, w, 11); txt(m.name, 6, 4, '#e8e2f0', 6);
+    const hpT = `HP ${gs.hp}/${gs.maxHp}`; setFont(6); const hw = ctx.measureText(hpT).width + 8;
+    ctx.fillStyle = 'rgba(18,14,24,0.7)'; ctx.fillRect(W - hw - 2, 2, hw, 11); txt(hpT, W - hw + 2, 4, gs.hp / gs.maxHp < 0.3 ? '#ff8080' : '#e8e2f0', 6);
+  }
+}
+const BGS = {
+  hall: ['#3a3352', '#2c2640', '#5e5870', '#4f4a60'],
+  kitchen: ['#5a3a2a', '#40281c', '#8a6a4a', '#6a4e36'],
+  court: ['#7ab8e8', '#a8d8f0', '#6aa84f', '#4f8a3b'],
+  throne: ['#4a1a2a', '#2c1018', '#6a2a3a', '#5a2030'],
+};
+function hpBar(x, y, w, cur, max) {
+  txt('HP', x, y - 1, '#e8833a', 6);
+  ctx.fillStyle = '#2a2440'; ctx.fillRect(x + 13, y, w + 2, 6);
+  ctx.fillStyle = '#585060'; ctx.fillRect(x + 14, y + 1, w, 4);
+  const f = clamp(cur / max, 0, 1);
+  ctx.fillStyle = f > 0.5 ? '#48c060' : f > 0.2 ? '#e8c030' : '#e04040';
+  ctx.fillRect(x + 14, y + 1, Math.round(w * f), 4);
+}
+function drawBattle() {
+  const c = BGS[B.bg] || BGS.hall;
+  const g = ctx.createLinearGradient(0, 0, 0, 100); g.addColorStop(0, c[1]); g.addColorStop(1, c[0]);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = c[3]; ctx.fillRect(0, 70, W, 90);
+  ctx.fillStyle = c[2]; for (let i = 0; i < 6; i++) ctx.fillRect(0, 72 + i * i * 3, W, 1);
+  if (B.bg === 'court') { ctx.fillStyle = '#ffffff'; ellipse(40, 20, 16, 4, '#ffffff'); ellipse(190, 34, 12, 3, '#ffffff'); }
+  else { for (let i = 0; i < 5; i++) { ctx.fillStyle = 'rgba(0,0,0,0.15)'; ctx.fillRect(i * 52 + 10, 0, 10, 70); } }
+  const ent = B.enter;
+  const ex = 144 + Math.round((1 - ent) * 120), px = 30 - Math.round((1 - ent) * 120);
+  ellipse(ex + 32, 62, 40, 8, c[2]); ellipse(ex + 32, 62, 36, 6, 'rgba(0,0,0,0.15)');
+  ellipse(px + 26, 104, 44, 8, c[2]); ellipse(px + 26, 104, 40, 6, 'rgba(0,0,0,0.15)');
+  // enemy
+  const blinkHide = B.eBlink > 0 && Math.floor(B.eBlink * 20) % 2 === 0;
+  if (!blinkHide && B.eDie < 1) {
+    ctx.save();
+    if (B.eDie > 0) { ctx.globalAlpha = 1 - B.eDie; }
+    const bob = Math.round(Math.sin(gs.time * 2.5) * 1.5);
+    const dy = Math.round(B.eDie * 30);
+    ctx.beginPath(); ctx.rect(0, 0, W, 66); ctx.clip();
+    drawSprite(B.en.sprite, ex, -2 + bob + dy, 4);
+    ctx.restore();
+  }
+  // player
+  const shake = B.pShake > 0 ? rnd(-2, 2) : 0;
+  drawSprite('k_up_0', px + 2 + shake, 58, 3);
+  // enemy info
+  box(4, 4, 132, 30);
+  txt(B.en.name, 10, 10, '#2a2440');
+  hpBar(14, 22, 100, B.eHp, B.en.maxHp);
+  // player info
+  box(124, 68, 112, 38);
+  txt('KRISTEN', 130, 74, '#2a2440');
+  hpBar(132, 86, 80, B.pHp, gs.maxHp);
+  txt(`${Math.ceil(B.pHp)}/${gs.maxHp}`, 228, 95, '#2a2440', 7, 'right');
+}
+function drawTitle() {
+  const t = gs.time;
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0c0a24'); g.addColorStop(1, '#3a2452');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  for (let i = 0; i < 40; i++) { const x = (i * 97) % W, y = (i * 53) % 90; const a = 0.4 + 0.6 * Math.abs(Math.sin(t * 1.5 + i)); ctx.fillStyle = `rgba(255,255,230,${a})`; ctx.fillRect(x, y, 1, 1); }
+  disc(ctx, 196, 26, 12, '#f4ecd0'); disc(ctx, 201, 22, 10, '#0f0c28');
+  // castle silhouette
+  ctx.fillStyle = '#16102a';
+  ctx.fillRect(30, 90, 180, 70); ctx.fillRect(20, 60, 30, 100); ctx.fillRect(190, 60, 30, 100); ctx.fillRect(100, 45, 40, 115);
+  for (let x = 30; x < 210; x += 10) ctx.fillRect(x, 85, 6, 6);
+  for (let x = 20; x < 50; x += 8) ctx.fillRect(x, 55, 5, 6);
+  for (let x = 190; x < 220; x += 8) ctx.fillRect(x, 55, 5, 6);
+  ctx.beginPath(); ctx.moveTo(98, 46); ctx.lineTo(120, 18); ctx.lineTo(142, 46); ctx.fill();
+  ctx.fillStyle = '#f2d04b'; [[32, 72], [200, 80], [114, 60], [124, 60], [70, 110], [160, 108], [118, 90]].forEach(([x, y], i) => { if (Math.sin(t * 0.7 + i * 2) > -0.7) ctx.fillRect(x, y, 3, 4); });
+  ctx.fillStyle = '#0a0814'; ctx.fillRect(110, 126, 20, 34);
+  shadowTxt("KRISTEN'S", W / 2, 12, '#f2a0c3', 10, 'center', '#3a1030');
+  shadowTxt('GREAT ESCAPE', W / 2, 26, '#f2d04b', 14, 'center', '#5a2a10');
+  shadowTxt('from Castle Grumblewick', W / 2, 46, '#c8c0e8', 6, 'center');
+  drawSprite('k_down_0', W / 2 - 16, 116 + Math.round(Math.sin(t * 2)), 2);
+  if (Math.floor(t * 2) % 2 === 0) shadowTxt(isTouchDevice ? 'TAP OR PRESS A' : 'PRESS ENTER', W / 2, 100, '#ffffff', 8, 'center');
+  shadowTxt(`ENDINGS FOUND: ${foundEndings.length}/8`, W / 2, 150, '#a8a0c8', 6, 'center');
+}
+function drawEndingArt(id, t) {
+  const cxm = W / 2;
+  const K = (x, y, s = 3, name = 'k_down_0') => drawSprite(name, x, y, s);
+  const crown = (x, y) => { ctx.fillStyle = '#f2d04b'; ctx.fillRect(x, y + 3, 14, 4); ctx.fillRect(x, y, 2, 4); ctx.fillRect(x + 6, y - 1, 2, 5); ctx.fillRect(x + 12, y, 2, 4); ctx.fillStyle = '#d03a3a'; ctx.fillRect(x + 6, y + 4, 2, 2); };
+  const bob = Math.round(Math.sin(t * 3) * 2);
+  switch (id) {
+    case 'sheets': {
+      ctx.fillStyle = '#2e2a3d'; ctx.fillRect(130, 30, 90, 80);
+      ctx.fillStyle = '#f2d080'; ctx.fillRect(140, 50, 70, 50);
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(150, 80, 54, 16); disc(ctx, 158, 80, 5, '#ffffff'); disc(ctx, 170, 78, 6, '#ffffff'); disc(ctx, 190, 79, 5, '#ffffff');
+      drawSprite('baron', 168, 58, 2); ctx.fillStyle = '#7cc8e8'; ctx.fillRect(170, 56, 28, 6);
+      ctx.fillStyle = '#f2d04b'; ctx.fillRect(194, 74, 6, 5); ctx.fillStyle = '#e8833a'; ctx.fillRect(200, 76, 2, 1);
+      ctx.fillStyle = '#e8e8f0'; ctx.fillRect(80, 0, 3, 52);
+      K(58 + bob, 44, 3, 'k_up_0'); break;
+    }
+    case 'chef': {
+      drawSprite('soup', 140, 50 + bob, 3);
+      K(50, 46, 3);
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(60, 30, 28, 18); disc(ctx, 66, 30, 6, '#ffffff'); disc(ctx, 80, 30, 6, '#ffffff'); ctx.fillStyle = '#d8d8e0'; ctx.fillRect(60, 46, 28, 3);
+      for (let i = 0; i < 3; i++) { ctx.fillStyle = '#f2d04b'; disc(ctx, 120 + i * 20, 30 + Math.round(Math.sin(t * 4 + i) * 3), 3, '#f2d04b'); }
+      break;
+    }
+    case 'dragon': {
+      disc(ctx, 200, 30, 12, '#f4ecd0');
+      for (let i = 0; i < 20; i++) { ctx.fillStyle = '#fff'; ctx.fillRect((i * 67) % W, (i * 31) % 70, 1, 1); }
+      const dx = 60 + Math.sin(t) * 10;
+      drawSprite('smudge', dx, 40 + bob, 5, true);
+      drawSprite('k_side_0', dx + 30, 28 + bob, 2);
+      break;
+    }
+    case 'hay': {
+      ctx.fillStyle = '#5a983f'; ctx.fillRect(0, 100, W, 30);
+      disc(ctx, 120, 108, 30, '#e8c84a'); for (let i = 0; i < 12; i++) { ctx.fillStyle = '#c9a13b'; ctx.fillRect(96 + i * 4, 82 + (i % 3) * 4, 1, 6); }
+      K(96, 50 + bob, 3);
+      ctx.fillStyle = '#e8c84a'; ctx.fillRect(100, 52, 4, 2); ctx.fillRect(130, 56, 5, 1); ctx.fillRect(110, 86, 6, 1);
+      disc(ctx, 172, 70, 8, '#3f7fb8'); disc(ctx, 172, 70, 4, '#f2d04b'); ctx.fillStyle = '#3f7fb8'; ctx.fillRect(168, 76, 3, 12); ctx.fillRect(174, 76, 3, 12);
+      break;
+    }
+    case 'taxes': {
+      K(40, 46, 3); drawSprite('baron', 150, 46, 3);
+      for (let i = 0; i < 18; i++) { const x = 100 + (i % 6) * 7, y = 100 - Math.floor(i / 6) * 5; disc(ctx, x, y, 3, '#f2d04b'); ctx.fillStyle = '#c9a13b'; ctx.fillRect(x - 1, y, 2, 1); }
+      const sp = Math.floor(t * 3) % 3; ctx.fillStyle = '#ffffff'; ctx.fillRect(108 + sp * 10, 70, 1, 3); ctx.fillRect(107 + sp * 10, 71, 3, 1);
+      break;
+    }
+    case 'queen': {
+      ctx.fillStyle = '#c9a13b'; ctx.fillRect(cxm - 32, 30, 64, 70); ctx.fillStyle = '#a01e2e'; ctx.fillRect(cxm - 26, 36, 52, 60);
+      drawSprite('k_down_0', cxm - 24, 46, 3);
+      crown(cxm - 7, 42 + bob);
+      drawSprite('ghost', 30, 60 + bob, 2); drawSprite('gobbo', 180, 64, 2);
+      break;
+    }
+    case 'home': {
+      ctx.fillStyle = '#8a5a32'; ctx.fillRect(130, 50, 80, 50); ctx.fillStyle = '#a8303f'; ctx.beginPath(); ctx.moveTo(124, 52); ctx.lineTo(170, 22); ctx.lineTo(216, 52); ctx.fill();
+      ctx.fillStyle = '#f2d080'; ctx.fillRect(142, 62, 14, 12); ctx.fillRect(184, 62, 14, 12); ctx.fillStyle = '#4f311a'; ctx.fillRect(163, 74, 14, 26);
+      K(50, 50, 3);
+      ctx.fillStyle = '#f8f6ee'; ctx.fillRect(104, 40 + bob, 18, 12); ctx.fillStyle = '#d03a3a'; ctx.fillRect(111, 44 + bob, 4, 4);
+      break;
+    }
+    case 'intern': {
+      for (let i = 0; i < 16; i++) { ctx.fillStyle = i % 2 ? '#f8f6ee' : '#e0dccc'; ctx.fillRect(140 + (i % 3), 100 - i * 5, 40, 5); }
+      K(60, 50, 3);
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(108, 78, 10, 12); ctx.fillRect(118, 81, 3, 6); ctx.fillStyle = '#d03a3a'; ctx.fillRect(110, 82, 6, 3);
+      break;
+    }
+  }
+}
+function drawEnding() {
+  const E = ENDINGS[gs.endingId]; const t = gs.endT;
+  ctx.fillStyle = E.bg; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(255,255,255,0.05)'; for (let i = 0; i < 12; i++) ctx.fillRect((i * 40 + t * 10) % (W + 40) - 20, 0, 12, H);
+  drawEndingArt(gs.endingId, t);
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, W, 22);
+  shadowTxt(`ENDING ${E.n} OF 8${gs.endingNew ? '  - NEW!' : ''}`, W / 2, 2, '#f2a0c3', 6, 'center');
+  shadowTxt(E.title, W / 2, 11, '#f2d04b', 8, 'center');
+  if (gs.endingDone) {
+    box(4, 108, 232, 48);
+    txt('THE END', W / 2, 114, '#c4495e', 8, 'center');
+    txt(`Endings found: ${foundEndings.length}/8`, W / 2, 128, '#2a2440', 7, 'center');
+    if (Math.floor(gs.time * 2) % 2 === 0) txt(foundEndings.length >= 8 ? 'You found them all! Press A' : 'Press A to try another path', W / 2, 142, '#5a5474', 6, 'center');
+  }
+}
+function drawDialog() {
+  const d = ui.dialog; if (!d) return;
+  const inBattleMain = gs.mode === 'battle' && ui.menu && ui.menu.style === 'battle';
+  box(4, 108, 232, 48);
+  let left = Math.floor(d.shown);
+  const lines = d.pages[d.page];
+  lines.forEach((ln, i) => {
+    const s = ln.slice(0, Math.max(0, left)); left -= ln.length;
+    txt(s, 12, 115 + i * LH, '#2a2440');
+  });
+  const full = lines.join('').length;
+  if (!d.hold && d.shown >= full && !inBattleMain) {
+    const y = 147 + (Math.floor(gs.time * 3) % 2);
+    ctx.fillStyle = '#c4495e'; ctx.fillRect(222, y, 7, 2); ctx.fillRect(223, y + 2, 5, 1); ctx.fillRect(224, y + 3, 3, 1); ctx.fillRect(225, y + 4, 1, 1);
+  }
+}
+function drawMenu() {
+  const m = ui.menu; if (!m) return;
+  m.rects = [];
+  if (m.style === 'choice') {
+    setFont(FS);
+    const w = Math.max(...m.items.map(s => ctx.measureText(s).width)) + 26;
+    const h = m.items.length * LH + 10;
+    const x = 236 - w, y = 106 - h;
+    box(x, y, w, h);
+    m.items.forEach((s, i) => {
+      const iy = y + 6 + i * LH;
+      txt(s, x + 16, iy, '#2a2440');
+      if (i === m.index) cursorTri(x + 7, iy);
+      m.rects.push({ x, y: iy - 3, w, h: LH });
+    });
+  } else if (m.style === 'battle') {
+    box(124, 108, 112, 48);
+    m.items.forEach((s, i) => {
+      const ix = 138 + (i % 2) * 50, iy = 118 + Math.floor(i / 2) * 18;
+      txt(s, ix, iy, '#2a2440');
+      if (i === m.index) cursorTri(ix - 9, iy);
+      m.rects.push({ x: ix - 12, y: iy - 5, w: 50, h: 18 });
+    });
+  } else if (m.style === 'moves') {
+    box(4, 108, 232, 48);
+    m.items.forEach((s, i) => {
+      const ix = 20 + (i % 2) * 110, iy = 118 + Math.floor(i / 2) * 18;
+      txt(s, ix, iy, '#2a2440');
+      if (i === m.index) cursorTri(ix - 10, iy);
+      m.rects.push({ x: ix - 14, y: iy - 5, w: 110, h: 18 });
+    });
+    txt('B: back', 230, 150, '#8a84a8', 5, 'right');
+  }
+}
+function draw() {
+  ctx.save();
+  if (gs.mode === 'title') drawTitle();
+  else if (gs.mode === 'world') drawWorld();
+  else if (gs.mode === 'battle' && B) drawBattle();
+  else if (gs.mode === 'ending') drawEnding();
+  else { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); }
+  if (gs.mode === 'battle' && gs.shake > 0) { ctx.fillStyle = 'rgba(255,0,0,0.12)'; ctx.fillRect(0, 0, W, H); }
+  drawDialog();
+  drawMenu();
+  if (gs.flash) { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); }
+  if (gs.fade > 0) { ctx.fillStyle = `rgba(0,0,0,${gs.fade})`; ctx.fillRect(0, 0, W, H); }
+  ctx.restore();
+}
+
+/* ================= INPUT WIRING ================= */
+const input = { held: {}, pressed: {}, tap: null };
+function press(k) { if (!input.held[k]) input.pressed[k] = true; input.held[k] = true; }
+function release(k) { input.held[k] = false; }
+const KEYMAP = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', KeyZ: 'a', Enter: 'a', Space: 'a', KeyX: 'b', Escape: 'b', Backspace: 'b' };
+addEventListener('keydown', e => { const k = KEYMAP[e.code]; if (!k) return; e.preventDefault(); Sound.unlock(); if (!e.repeat) press(k); });
+addEventListener('keyup', e => { const k = KEYMAP[e.code]; if (k) release(k); });
+addEventListener('blur', () => { input.held = {}; });
+['touchend', 'click', 'pointerdown'].forEach(ev => addEventListener(ev, () => Sound.unlock(), { passive: true }));
+document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('dblclick', e => e.preventDefault());
+
+cv.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  const r = cv.getBoundingClientRect();
+  input.tap = { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H };
+});
+const dpad = document.getElementById('dpad');
+let dpadPointer = null;
+function setDir(d) {
+  for (const k of ['up', 'down', 'left', 'right']) { if (k === d) press(k); else release(k); }
+  dpad.className = d ? 'dir-' + d : '';
+}
+function dpadFromEvent(e) {
+  const r = dpad.getBoundingClientRect();
+  const dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
+  if (Math.hypot(dx, dy) < 10) return setDir(null);
+  setDir(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
+}
+dpad.addEventListener('pointerdown', e => { e.preventDefault(); dpadPointer = e.pointerId; try { dpad.setPointerCapture(e.pointerId); } catch (_) {} dpadFromEvent(e); });
+dpad.addEventListener('pointermove', e => { if (e.pointerId === dpadPointer) dpadFromEvent(e); });
+const dpadEnd = e => { if (e.pointerId === dpadPointer) { dpadPointer = null; setDir(null); } };
+dpad.addEventListener('pointerup', dpadEnd); dpad.addEventListener('pointercancel', dpadEnd); dpad.addEventListener('lostpointercapture', dpadEnd);
+for (const [id, k] of [['btnA', 'a'], ['btnB', 'b']]) {
+  const el = document.getElementById(id);
+  el.addEventListener('pointerdown', e => { e.preventDefault(); el.classList.add('down'); press(k); if (navigator.vibrate) navigator.vibrate(8); });
+  const up = () => { el.classList.remove('down'); release(k); };
+  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up); el.addEventListener('pointerleave', up);
+}
+const muteBtn = document.getElementById('mute');
+function refreshMute() { muteBtn.textContent = Sound.muted ? '♪ OFF' : '♪ ON'; }
+muteBtn.addEventListener('pointerdown', e => { e.stopPropagation(); });
+muteBtn.addEventListener('click', e => { e.preventDefault(); Sound.unlock(); Sound.setMuted(!Sound.muted); refreshMute(); muteBtn.blur(); });
+refreshMute();
+
+/* ================= LAYOUT ================= */
+const isTouchDevice = (window.matchMedia && matchMedia('(pointer: coarse)').matches) || 'ontouchstart' in window;
+if (isTouchDevice) document.body.classList.add('touch');
+function safeInsets() { const s = getComputedStyle(document.getElementById('safe')); return { t: parseFloat(s.paddingTop) || 0, b: parseFloat(s.paddingBottom) || 0, l: parseFloat(s.paddingLeft) || 0, r: parseFloat(s.paddingRight) || 0 }; }
+function layout() {
+  const vw = innerWidth, vh = innerHeight, si = safeInsets();
+  const portrait = vh >= vw;
+  const dp = document.getElementById('dpad').style, ab = document.getElementById('ab').style, hint = document.getElementById('hint').style;
+  let w, h, left, top;
+  if (isTouchDevice && portrait) {
+    const ctrlH = 200 + si.b;
+    w = Math.min(vw - 12, (vh - si.t - ctrlH - 20) * 1.5); h = w / 1.5;
+    left = (vw - w) / 2; top = si.t + Math.max(36, (vh - si.t - ctrlH - h) / 2);
+    const cy = Math.min(vh - si.b - 170, top + h + 24);
+    dp.left = (12 + si.l) + 'px'; dp.top = cy + 'px';
+    ab.right = (12 + si.r) + 'px'; ab.left = 'auto'; ab.top = (cy + 8) + 'px';
+  } else if (isTouchDevice) {
+    w = Math.min(vw - si.l - si.r - 2 * 172, (vh - 16) * 1.5); h = w / 1.5;
+    if (h > vh - 16) { h = vh - 16; w = h * 1.5; }
+    left = (vw - w) / 2; top = (vh - h) / 2;
+    dp.left = (10 + si.l) + 'px'; dp.top = (vh - 156 - 20 - si.b) + 'px';
+    ab.right = (10 + si.r) + 'px'; ab.left = 'auto'; ab.top = (vh - 140 - 24 - si.b) + 'px';
+  } else {
+    w = Math.min(vw - 32, (vh - 70) * 1.5); h = w / 1.5;
+    left = (vw - w) / 2; top = Math.max(12, (vh - h - 30) / 2);
+    hint.top = (top + h + 12) + 'px';
+  }
+  Object.assign(cv.style, { width: w + 'px', height: h + 'px', left: left + 'px', top: top + 'px' });
+}
+addEventListener('resize', layout);
+addEventListener('orientationchange', () => setTimeout(layout, 200));
+layout();
+
+/* ================= MAIN LOOP ================= */
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  update(dt); draw();
+  requestAnimationFrame(frame);
+}
+function start() {
+  gs.mode = 'title'; gs.fade = 1; fade(0, 600); Sound.music('title');
+  requestAnimationFrame(frame);
+}
+const fontReady = (document.fonts && document.fonts.load) ? Promise.race([document.fonts.load(`8px ${FONT}`), wait(2500)]) : Promise.resolve();
+fontReady.then(start, start);
+</script>
+</body>
+</html>
